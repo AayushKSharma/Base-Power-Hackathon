@@ -1,7 +1,8 @@
 """Capacity-policy test harness: replay a policy on real ERCOT data and score it.
 
     from harness import ConstantHaircut, load_scenario, run
-    result = run(policy, load_scenario("scenarios/minimal.yaml"), start, end, seed=7)
+    result = run(ConstantHaircut(0.9), load_scenario("scenarios/baseline.yaml"), start, end, seed=7)
+    result.scorecards["P10"].totals["ECRS"].oversold_mw_h
 """
 
 from harness.policy import ConstantHaircut, Policy, PolicyError
