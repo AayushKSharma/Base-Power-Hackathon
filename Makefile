@@ -1,6 +1,6 @@
 PY ?= .venv/bin/python
 
-.PHONY: install test typecheck market-data market-report fixtures
+.PHONY: install test typecheck market-data market-report fixtures base-actual base-actual-summary
 
 install:
 	python3 -m venv .venv
@@ -23,3 +23,12 @@ market-report:
 # Re-record tests/fixtures/raw from ERCOT (needs the network).
 fixtures:
 	$(PY) scripts/record_fixtures.py
+
+# Ingest Base's ALR rows from the 60-Day SCED Disclosure (NP3-965-ER), Dec 5, 2025 to
+# the latest published day (60 days ago). About 55 MB of download per day; only
+# missing days are fetched. Pass START=YYYY-MM-DD / END=YYYY-MM-DD to narrow it.
+base-actual:
+	$(PY) -m harness.base_actual build $(if $(START),--start $(START)) $(if $(END),--end $(END))
+
+base-actual-summary:
+	$(PY) -m harness.base_actual summary --events

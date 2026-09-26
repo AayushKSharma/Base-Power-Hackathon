@@ -177,3 +177,82 @@ From the build on 2026-09-26, with no API key (see `data/market/quality_report.m
   | Load-zone SPP | about $25/MWh | $1,612/MWh (North) |
 
 <!-- summary:end -->
+
+## Base-actual dataset (`load_base_actual`)
+
+What Base's own home-battery fleet actually did in ERCOT, per SCED run. It comes from ERCOT's **60-Day SCED Disclosure** (NP3-965-ER), load-resource table. ERCOT publishes each operating day 60 days after it happens, so the newest day is always about two months old.
+
+```bash
+make base-actual            # ingest Dec 5, 2025 to the latest published day (about 55 MB download per day)
+make base-actual-summary    # per resource per day stats, plus each dispatch-down event
+```
+
+```python
+from harness.base_actual import BASE_QSE, daily_summary, dispatch_down_events, load_base_actual
+
+rows = load_base_actual("2026-07-01", "2026-07-28", qse=BASE_QSE)  # or resources=["OB_ALD1"]
+daily_summary(rows)                          # mean flexible MW, max awards, mean |deviation|, events
+dispatch_down_events(rows, threshold_mw=5)   # one row per event
+```
+
+- `load_base_actual` raises `MarketDataMissing` for a day that hasn't been ingested.
+- `python -m harness.base_actual build` reports days that aren't published yet (less than 60 days old) and days no MIS document could supply. Neither is an error.
+
+**Rows.** There is one row per (SCED run, Aggregate Load Resource).
+
+- The file has no resource-type column, so an ALR is a resource named `<SITE>_ALD<n>`, plus every resource under Base's QSE `QBASTX`.
+- On 2026-07-20 that gave 13 ALRs across 8 QSEs. Base's are `OB_ALD1`, `SANSM_ALD1` and `MIDNT_ALD1`.
+- Other QSEs' ALRs are kept for context.
+- The raw cache keeps all 51 published columns of those rows.
+
+| Column | Meaning |
+|---|---|
+| `sced_time_utc`, `sced_time_cpt` | SCED run time. Runs are not interval-aligned: about 00:00:20, 00:05:20, and so on. |
+| `interval_start_utc` | The 5-minute market interval the run started in. This is the join key to `load_intervals`. |
+| `operating_day`, `repeated_hour` | CPT operating day, and ERCOT's Repeated Hour Flag (the second 01:00–02:00 on fall-back). |
+| `qse`, `dme`, `resource`, `status` | QSE, DME, resource name, and telemetered resource status (for example `ONL`). |
+| `max_power_consumption_mw`, `low_power_consumption_mw`, `real_power_consumption_mw` | MPC, LPC, RPC (telemetered). |
+| `base_point_mw` | SCED's instructed consumption. |
+| `as_capability_ecrs_mw`, `as_capability_nspin_mw` | Telemetered AS capability. |
+| `as_award_ecrs_mw`, `as_award_nspin_mw` | AS awards. An empty cell in the source means no award and is stored as 0. |
+| `self_provided_ecrs_mw` | Self-provided ECRS. |
+| `flexible_mw` | Derived: RPC − LPC, how far the resource could reduce consumption. |
+| `deviation_mw` | Derived: RPC − Base Point. Positive means consuming more than SCED instructed. |
+
+All quantities are MW.
+
+**Dispatch-down events.**
+
+- A SCED run is *dispatched down* when Base Point is more than a threshold below real power consumption (`deviation_mw > threshold`), meaning SCED asked the resource to consume less.
+- An event is a run of consecutive dispatched-down SCED runs of one resource.
+- The threshold is configurable (`threshold_mw=`, `--threshold`). It defaults to **2 MW**: on 2026-07-20, Base's mean |deviation| was 0.01–0.55 MW, while its one real dispatch moved it 6–25 MW.
+
+**Sources.**
+
+- MIS keeps every 60-day disclosure zip back to 2024, so every post-RTC+B day can be fetched without a key.
+- ERCOT has reissued some days. For each operating day the builder takes, in order:
+  1. the latest load-resource `…_SUPPLEMENTAL` zip whose report dates cover it (operating days 2025-12-05 to 2026-01-05 come from `60d_Load_Resource_Data_in_SCED_02032026_thru_03062026_SUPPLEMENTAL`);
+  2. a `60_Day_SCED_Disclosure_CORRECTION` zip;
+  3. the regular `60_Day_SCED_Disclosure` zip.
+- The table is read raw. gridstatus 0.36.0's processed 60-day parser fails on post-RTC files ("Unknown curve type found").
+
+**Storage.**
+
+- `data/raw/NP3-965-ER/<day>.csv.gz`: ALR rows, all columns as published, about 70 KB per day.
+- `data/market/base_actual/<day>.parquet`
+- Rebuilds are idempotent, and only days missing from the raw cache are downloaded.
+
+### Open questions
+
+These need an answer, from Base or ERCOT, before relying on the numbers:
+
+1. **The MW offset.** ADERs telemeter net load plus an ERCOT-assigned MW offset. So the absolute MPC, LPC, RPC and Base Point levels are not household consumption, and only differences (`flexible_mw`, `deviation_mw`) are meaningful. Each resource's offset is unknown.
+2. **ECRS awards above telemetered ECRS capability.** On 2026-07-20, `OB_ALD1` held a 24.3 MW ECRS award in hours when its `AS Capability ECRS` was 10 MW (Non-Spin: 12.2 MW award against 30 MW capability). Either the capability column means something else for ALRs, or awards are made against a different limit.
+3. **Mapping resources to Base's ADER groups.** Base publishes North, South and Houston groups. Which of `OB_ALD1`, `SANSM_ALD1` and `MIDNT_ALD1` is which isn't confirmed; the names look like sites, not zones.
+4. **ALRs are identified by name** (`_ALD<n>`). The file has no resource-type column.
+5. **What dispatch-down catches.** The rule only sees the lag between SCED's instruction and the resource's response. A resource that follows within one SCED run shows no deviation.
+6. **Dispatch-down mostly follows energy prices, not AS deployments.** An ALR bids to buy energy, so SCED cuts its consumption when the load-zone price rises above its bid.
+   - 2026-07-20 20:20: `OB_ALD1` and `SANSM_ALD1` were dispatched down while Houston's price hit $330/MWh. AS MCPCs stayed near $1–5 and the MCPC scarcity proxy didn't fire.
+   - 2026-01-28: all three Base resources were dispatched down from 04:55 to about 08:00 CST. That began at about $350/MWh energy with low AS prices, and ran through the $399/MW-h ECRS spike.
+
+   Separating an ECRS or Non-Spin deployment from an economic energy dispatch needs another signal (see #1 item C).
