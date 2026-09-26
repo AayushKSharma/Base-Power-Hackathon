@@ -257,3 +257,59 @@ These need an answer, from Base or ERCOT, before relying on the numbers:
    - 2026-01-28: all three Base resources were dispatched down from 04:55 to about 08:00 CST. That began at about $350/MWh energy with low AS prices, and ran through the $399/MW-h ECRS spike.
 
    Separating an ECRS or Non-Spin deployment from an economic energy dispatch needs another signal (see #1 item C).
+
+## Forecast-input store (`as_of`)
+
+Every forecast a policy is allowed to see, keyed by **posted time** (when ERCOT published the vintage) and **valid time** (the hour or 5-minute interval it describes). Vintages are never merged: two postings of the same hour stay two rows. `as_of` is the only read path.
+
+```bash
+make forecast-data      # posted dates: 7 days ago through today; fetches only vintages not already cached
+make forecast-report    # per input: posted-time range, vintage count, gaps
+```
+
+```python
+from datetime import timedelta
+from harness.forecast import as_of, build_forecasts
+
+build_forecasts("2026-03-01", "2026-03-08")
+as_of("2026-03-08T08:00:00Z", horizon=timedelta(hours=6))
+# {"dam_as_plan": [{"posted_time": ..., "valid_time": ..., "series": "ECRS", "value": 100.0, "in_use": None}, ...]}
+```
+
+`as_of(T, inputs, horizon)` returns, per input, the rows of the **latest vintage with posted time ≤ T** whose valid time is in `[T, T + horizon)`. A row posted after T is never returned. Pass `inputs=["dam_as_plan", "load_by_model_zone"]` to read a subset. The horizon defaults to 168 hours.
+
+`harness run --forecasts data/forecasts` fills each observation's `forecasts` from `as_of` at that interval's start. `--forecast-horizon` is the horizon in hours. Without `--forecasts` the section stays empty.
+
+| Input | Report | What a series is | Unit |
+|---|---|---|---|
+| `load_by_model_zone` | NP3-565-CD | `{model}\|{zone}` (`coast`, `east`, `far_west`, `north`, `north_central`, `south_central`, `southern`, `west`, `system`). `in_use` says which model ERCOT is using. | MW |
+| `wind_system` | NP4-732-CD | `stwpf` or `wgrpp`, then `system`, `lz_south_houston`, `lz_west`, `lz_north` | MW |
+| `wind_region` | NP4-742-CD | `stwpf` or `wgrpp`, then `system`, `panhandle`, `coastal`, `south`, `west`, `north` | MW |
+| `wind_by_model` | NP4-442-CD | `{model}\|{region}` (for example `S\|SYSTEM_TOTAL`). `in_use` marks the model copied into the other wind reports. | MW |
+| `solar_system` | NP4-737-CD | `stppf` or `pvgrpp`, then `system` | MW |
+| `solar_region` | NP4-745-CD | `stppf` or `pvgrpp`, then `system`, `center_west`, `north_west`, `far_west`, `far_east`, `south_east`, `center_east` | MW |
+| `outage_capacity` | NP3-233-CD | `total_resource`, `total_irr` or `total_new_equip`, then `south`, `north`, `west`, `houston`. The file has no DST flag; the repeated fall-back hour is read as daylight time. | MW |
+| `dam_as_plan` | NP4-33-CD | ancillary type, for example `ECRS`, `NSPIN` | MW |
+| `dam_spp` | NP4-190-CD | load-zone and hub settlement points (`LZ_*`, `HB_*`). Resource nodes are not stored. | $/MWh |
+| `dam_mcpc` | NP4-188-CD | ancillary type | $/MW-h |
+| `rtd_lmp` | NP6-970-CD | load-zone and hub settlement points (types LZ, HU, SH, AH). Valid time is the start of the 5-minute interval. | $/MWh |
+| `rtd_mcpc` | NP6-329-CD | `REGUP`, `REGDN`, `RRS`, `ECRS`, `NSPIN`. This report is not a filtered public-API endpoint; the archive is tried and a failure is a coverage-report error. | $/MW-h |
+
+Posted time for every input except the two RTD reports' own run clocks is the document's publish time (MIS `PublishDate`, or the API `postDatetime`). A `postDatetime` with no UTC offset is Central time. One document is one vintage. Actual generation and COP HSL columns in the wind and solar files are not stored; those reports also carry realized output, and this store keeps the forecasts.
+
+**Credentials and gaps.**
+
+- Set `ERCOT_API_USERNAME`, `ERCOT_API_PASSWORD` and `ERCOT_PUBLIC_API_SUBSCRIPTION_KEY` to pull archive history by `postDatetime`. The builder only reads these variables.
+- Without them, the build uses MIS. MIS keeps about a week of these reports. The coverage report lists, per input, the posted-time range that was stored, gaps longer than the report's cadence, and requested dates with no vintage.
+- RTD runs about every 5 minutes, the hourly forecasts every hour, and the DAM reports about daily. A gap is a hole between successive postings, not a missing valid hour inside one vintage.
+
+**Storage.**
+
+```
+data/forecast-raw/<REPORT>/<posted-time>__<doc-id>.csv.gz
+data/forecast-raw/<REPORT>/<posted-time>__<doc-id>.meta.json
+data/forecasts/<input>/<YYYY-MM-DD>.parquet    # posted date in Central Prevailing Time
+data/forecasts/coverage.md
+```
+
+Both directories are git-ignored. A rebuild of a posted-date range rewrites the same rows. A vintage already in the raw cache is not downloaded again. `tests/fixtures/forecast/` holds a synthetic day in that raw layout, with several vintages of the same hours, so tests run with no network. The column layout matches MIS files read on 2026-09-26. The numbers are not a real ERCOT day.

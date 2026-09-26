@@ -69,7 +69,7 @@ result.scorecards["P10"].totals["ECRS"].oversold_mw_h
   | `fleet` | **Observed** state per region, at the interval's start. See the list below. |
   | `products` | Duration, pilot cap and cap share per product |
   | `history` | Empty for now |
-  | `forecasts` | Empty for now |
+  | `forecasts` | Latest forecast vintages posted at or before the interval, when `--forecasts` points at a forecast-input store. Empty otherwise |
   | `forecaster` | Empty for now |
 
   The `fleet` section has these fields per region:

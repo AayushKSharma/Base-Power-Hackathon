@@ -28,9 +28,10 @@ import numpy as np
 import pandas as pd
 
 from harness.fleet import FleetCase, simulate_day
+from harness.forecast.catalog import DEFAULT_HORIZON
 from harness.market import load_intervals
 from harness.market.catalog import Q_OK, quality_column, scarce_column
-from harness.observation import observations
+from harness.observation import ForecastQuery, observations
 from harness.policy import Policy
 from harness.products import LOAD_ZONES, PRODUCTS
 from harness.rng import RandomStreams
@@ -71,13 +72,15 @@ def run(
     *,
     market: MarketLoader | None = None,
     homes: Sequence[Mapping[str, Any]] | None = None,
+    forecasts: ForecastQuery | None = None,
+    forecast_horizon: dt.timedelta = DEFAULT_HORIZON,
 ) -> RunResult:
     """Score `policy` on `scenario` over operating days [start, end].
 
     `seed` defaults to the scenario's. Market data comes only from `market`,
     which defaults to the market-dataset loader. `homes`, when given, is
     attached to every observation; an external policy receives it only if its
-    handshake asks.
+    handshake asks. `forecasts`, when given, fills each observation from `as_of`.
     """
     seed = scenario.seed if seed is None else seed
     streams = RandomStreams(scenario.name, seed)
@@ -96,11 +99,12 @@ def run(
             if view == TYPICAL:
                 # One decision pass. Its faults are the same events on every case.
                 seen = next(c for c in cases if c.name == scenario.fleet.quantile_mock.typical)
-                faults, decisions = _decide(policy, scenario, rows, seen, homes)
+                faults, decisions = _decide(policy, scenario, rows, seen, homes, forecasts, forecast_horizon)
                 plan = [(case, seen, decisions, faults) for case in cases]
             else:
                 # A fresh pass per case, so a fallback cannot leak across quantiles.
-                plan = [_case_pass(policy, scenario, rows, case, homes) for case in cases]
+                plan = [_case_pass(policy, scenario, rows, case, homes, forecasts, forecast_horizon)
+                        for case in cases]
             for case, seen, reported, faults in plan:
                 result, dump = _score(scenario, day, rows, case, reported, faults)
                 days.setdefault(case.name, []).append(result)
@@ -117,9 +121,10 @@ def run(
 
 
 def _case_pass(policy: Policy, scenario: Scenario, rows: pd.DataFrame, case: FleetCase,
-               homes: Sequence[Mapping[str, Any]] | None,
+               homes: Sequence[Mapping[str, Any]] | None, forecasts: ForecastQuery | None,
+               forecast_horizon: dt.timedelta,
                ) -> tuple[FleetCase, FleetCase, dict[str, np.ndarray], FaultCounts]:
-    faults, decisions = _decide(policy, scenario, rows, case, homes)
+    faults, decisions = _decide(policy, scenario, rows, case, homes, forecasts, forecast_horizon)
     return case, case, decisions, faults
 
 
@@ -134,7 +139,8 @@ def _mw_h(mw: np.ndarray) -> float:
 
 
 def _decide(policy: Policy, scenario: Scenario, rows: pd.DataFrame, seen: FleetCase,
-           homes: Sequence[Mapping[str, Any]] | None) -> tuple[FaultCounts, dict[str, np.ndarray]]:
+           homes: Sequence[Mapping[str, Any]] | None, forecasts: ForecastQuery | None,
+           forecast_horizon: dt.timedelta) -> tuple[FaultCounts, dict[str, np.ndarray]]:
     """The policy's reported MW per product for each interval, seeing the fleet case `seen`.
 
     `begin_day`, when the policy has one, drops remembered state before the pass.
@@ -144,7 +150,8 @@ def _decide(policy: Policy, scenario: Scenario, rows: pd.DataFrame, seen: FleetC
     if callable(begin_day):
         begin_day()
     faults_before = _faults(policy)
-    decisions = [policy.decide(obs) for obs in observations(rows, scenario, seen, homes=homes)]
+    decisions = [policy.decide(obs) for obs in observations(
+        rows, scenario, seen, homes=homes, forecasts=forecasts, forecast_horizon=forecast_horizon)]
     reported = {product: np.array([float(d[product]) for d in decisions]) for product in PRODUCTS}
     return _faults(policy) - faults_before, reported
 

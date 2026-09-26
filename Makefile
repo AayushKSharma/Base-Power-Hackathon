@@ -1,6 +1,6 @@
 PY ?= .venv/bin/python
 
-.PHONY: install test typecheck market-data market-report fixtures base-actual base-actual-summary
+.PHONY: install test typecheck market-data market-report fixtures base-actual base-actual-summary forecast-data forecast-report
 
 install:
 	python3 -m venv .venv
@@ -32,3 +32,11 @@ base-actual:
 
 base-actual-summary:
 	$(PY) -m harness.base_actual summary --events
+
+# Build or extend the point-in-time forecast-input store. Without an ERCOT API
+# key this covers what MIS still keeps (about a week). Pass START= / END= to narrow it.
+forecast-data:
+	$(PY) -m harness.forecast build $(if $(START),--start $(START)) $(if $(END),--end $(END))
+
+forecast-report:
+	$(PY) -m harness.forecast report

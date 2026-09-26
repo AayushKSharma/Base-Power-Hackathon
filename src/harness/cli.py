@@ -18,6 +18,8 @@ import sys
 from pathlib import Path
 
 from harness.external import ExternalPolicy
+from harness.forecast import ForecastStore
+from harness.forecast.catalog import DEFAULT_HORIZON
 from harness.market import MarketDataMissing, load_intervals
 from harness.market.dataset import default_store_dir
 from harness.paths import runs_dir
@@ -49,12 +51,21 @@ def main(argv: list[str] | None = None) -> int:
     run_cmd.add_argument("--end", type=dt.date.fromisoformat, help="last operating day (default: --start)")
     run_cmd.add_argument("--seed", type=_seed, help="random seed (default: the scenario's seed)")
     run_cmd.add_argument("--market-dir", type=Path, help=f"market dataset (default {default_store_dir()})")
+    run_cmd.add_argument("--forecasts", type=Path,
+                         help="forecast-input store; fills each observation's forecasts from as_of")
+    run_cmd.add_argument("--forecast-horizon", type=float, default=DEFAULT_HORIZON / dt.timedelta(hours=1),
+                         help="hours of forecast valid time after each decision (default 168)")
     run_cmd.add_argument("--out", type=Path, help=f"output directory (default {runs_dir()}/<run name>)")
 
     args = parser.parse_args(argv)
     end = args.end or args.start
     if end < args.start:
         parser.error(f"--end {end} is before --start {args.start}")
+    if args.forecast_horizon < 0:
+        parser.error("--forecast-horizon must be non-negative")
+    if args.forecasts is not None and not args.forecasts.is_dir():
+        print(f"harness: error: forecast store {args.forecasts} is not a directory", file=sys.stderr)
+        return 2
     try:
         return _run(args, end)
     except (ScenarioError, PolicyError) as e:
@@ -68,8 +79,11 @@ def main(argv: list[str] | None = None) -> int:
 def _run(args: argparse.Namespace, end: dt.date) -> int:
     scenario = load_scenario(args.scenario)
     policy = _policy(args.policy, _params(args.param), scenario, args.decision_timeout, args.fallback)
+    forecasts = ForecastStore(args.forecasts) if args.forecasts is not None else None
     result = run(policy, scenario, args.start, end, args.seed,
-                 market=functools.partial(load_intervals, store_dir=args.market_dir))
+                 market=functools.partial(load_intervals, store_dir=args.market_dir),
+                 forecasts=forecasts,
+                 forecast_horizon=dt.timedelta(hours=args.forecast_horizon))
     cards = list(result.scorecards.values())
     card = cards[0]
     out = args.out or runs_dir() / f"{card.scenario}_{_slug(card.policy)}_{card.start}_{card.end}_seed{card.seed}"

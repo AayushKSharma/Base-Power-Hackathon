@@ -5,7 +5,8 @@ keep working as later slices fill them in:
 
     now         the interval's market row: RT MCPC, load-zone prices, scarcity flags
     history     realized public data posted before the interval (empty for now)
-    forecasts   latest forecast vintages posted before the interval (empty for now)
+    forecasts   latest forecast vintages posted at or before the interval
+                (empty unless the run was given a forecast store)
     forecaster  output of the configured price forecaster (empty for now)
     fleet       observed fleet state per region (see harness.fleet)
     products    product rules: duration, pilot cap and cap share
@@ -18,12 +19,14 @@ policy's handshake asks for it.
 
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Iterator, Mapping, Sequence
-from typing import Any, NotRequired, TypedDict
+from typing import Any, NotRequired, Protocol, TypedDict
 
 import pandas as pd
 
 from harness.fleet import FleetCase
+from harness.forecast.catalog import DEFAULT_HORIZON
 from harness.market.catalog import scarce_column
 from harness.products import LOAD_ZONES, PRODUCTS
 from harness.scenario import Scenario
@@ -59,6 +62,18 @@ class ProductView(TypedDict):
     cap_share: float
 
 
+class ForecastQuery(Protocol):
+    """The forecast-input store, as a run sees it: as_of at a decision time."""
+
+    def as_of(
+        self,
+        when: pd.Timestamp,
+        inputs: list[str] | None = None,
+        *,
+        horizon: dt.timedelta = DEFAULT_HORIZON,
+    ) -> dict[str, Any]: ...
+
+
 class Observation(TypedDict):
     now: Now
     history: dict[str, Any]
@@ -78,12 +93,16 @@ def observed_capability_mw(observation: Observation, product: str) -> float:
 
 
 def observations(rows: pd.DataFrame, scenario: Scenario, case: FleetCase, *,
-                 homes: Sequence[Mapping[str, Any]] | None = None) -> Iterator[Observation]:
+                 homes: Sequence[Mapping[str, Any]] | None = None,
+                 forecasts: ForecastQuery | None = None,
+                 forecast_horizon: dt.timedelta = DEFAULT_HORIZON) -> Iterator[Observation]:
     """One observation per row of the market interval table, in order, seeing
     the fleet as the fleet `case` has it at each interval's start.
 
     `homes` is copied onto every observation when given. The fleet model
     reports regions, not per-home records; this is how a run can attach those.
+    When `forecasts` is given, each observation's forecasts section is `as_of`
+    at that interval's start.
     """
     for i, (start, row) in enumerate(zip(pd.DatetimeIndex(rows.index), rows.to_dict("records"))):
         obs = Observation(
@@ -95,7 +114,7 @@ def observations(rows: pd.DataFrame, scenario: Scenario, case: FleetCase, *,
                 scarce={p: _flag(row[scarce_column(sfx)]) for p, sfx in PRODUCTS.items()},
             ),
             history={},
-            forecasts={},
+            forecasts={} if forecasts is None else forecasts.as_of(start, horizon=forecast_horizon),
             forecaster={},
             fleet=FleetView(regions=[
                 RegionView(
