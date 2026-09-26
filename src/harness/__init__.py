@@ -4,6 +4,7 @@
     result = run(policy, load_scenario("scenarios/minimal.yaml"), start, end, seed=7)
 """
 
+from harness.external import ExternalPolicy
 from harness.policy import ConstantHaircut, Policy, PolicyError
 from harness.rng import RandomStreams
 from harness.runner import RunResult, run
@@ -12,6 +13,7 @@ from harness.scorecard import Scorecard
 
 __all__ = [
     "ConstantHaircut",
+    "ExternalPolicy",
     "Policy",
     "PolicyError",
     "RandomStreams",

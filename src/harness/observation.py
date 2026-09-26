@@ -9,15 +9,17 @@ keep working as later slices fill them in:
     forecaster  output of the configured price forecaster (empty for now)
     fleet       fleet state (empty for now)
     products    product rules: pilot cap and cap share
+    homes       per-home state, only when a run supplies it
 
 It holds only JSON values (missing data is None), so an external policy can
-receive it as is.
+receive it as JSON. Per-home state is omitted from that copy unless the
+policy's handshake asks for it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Any, TypedDict
+from collections.abc import Iterator, Mapping, Sequence
+from typing import Any, NotRequired, TypedDict
 
 import pandas as pd
 
@@ -46,12 +48,20 @@ class Observation(TypedDict):
     forecaster: dict[str, Any]
     fleet: dict[str, Any]
     products: dict[str, ProductView]
+    # Present only when the run supplies per-home state. An external policy
+    # receives it only after asking in the handshake.
+    homes: NotRequired[list[dict[str, Any]]]
 
 
-def observations(rows: pd.DataFrame, scenario: Scenario) -> Iterator[Observation]:
-    """One observation per row of the market interval table, in order."""
+def observations(rows: pd.DataFrame, scenario: Scenario, *,
+                 homes: Sequence[Mapping[str, Any]] | None = None) -> Iterator[Observation]:
+    """One observation per row of the market interval table, in order.
+
+    `homes` is copied onto every observation when given. The fleet model does
+    not produce per-home state yet; this is how a run can attach it.
+    """
     for start, row in zip(pd.DatetimeIndex(rows.index), rows.to_dict("records")):
-        yield Observation(
+        obs = Observation(
             now=Now(
                 interval_start_utc=start.isoformat(),
                 interval_start_cpt=row["interval_start_cpt"].isoformat(),
@@ -66,6 +76,9 @@ def observations(rows: pd.DataFrame, scenario: Scenario) -> Iterator[Observation
             products={p: ProductView(cap_mw=r.cap_mw, cap_share=r.cap_share)
                       for p, r in scenario.products.items()},
         )
+        if homes is not None:
+            obs["homes"] = [dict(home) for home in homes]
+        yield obs
 
 
 def _number(value: Any) -> float | None:

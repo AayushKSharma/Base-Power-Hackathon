@@ -35,6 +35,6 @@ filterwarnings = [
 
 [tool.mypy]
 python_version = "3.12"
-files = ["src", "tests", "scripts"]
+files = ["src", "tests", "scripts", "examples"]
 ignore_missing_imports = true
 check_untyped_defs = true

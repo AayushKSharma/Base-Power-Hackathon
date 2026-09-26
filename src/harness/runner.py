@@ -8,10 +8,10 @@ combination of single-day runs.
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -22,7 +22,7 @@ from harness.observation import observations
 from harness.policy import Policy
 from harness.products import LOAD_ZONES, PRODUCTS
 from harness.scenario import Scenario
-from harness.scorecard import DayResult, ProductTotals, Scorecard
+from harness.scorecard import DayResult, FaultCounts, ProductTotals, Scorecard
 
 INTERVAL_H = 5 / 60
 
@@ -54,11 +54,14 @@ def run(
     seed: int | None = None,
     *,
     market: MarketLoader | None = None,
+    homes: Sequence[Mapping[str, Any]] | None = None,
 ) -> RunResult:
     """Score `policy` on `scenario` over operating days [start, end].
 
     `seed` defaults to the scenario's. Market data comes only from `market`,
-    which defaults to the market-dataset loader.
+    which defaults to the market-dataset loader. `homes`, when given, is
+    attached to every observation; an external policy receives it only if its
+    handshake asks.
     """
     seed = scenario.seed if seed is None else seed
     if seed < 0:
@@ -66,18 +69,30 @@ def run(
     if start > end:
         raise ValueError(f"start {start} is after end {end}")
     intervals = (market or load_intervals)(start, end)
-    days, dumps = [], []
-    for day, rows in intervals.groupby(intervals["operating_day"].dt.date, sort=True):
-        result, dump = _run_day(policy, scenario, cast(dt.date, day), rows)
-        days.append(result)
-        dumps.append(dump)
-    return RunResult(Scorecard(policy.name, scenario.name, seed, tuple(days)),
-                     pd.concat(dumps, ignore_index=True))
+    close = getattr(policy, "close", None)
+    try:
+        days, dumps = [], []
+        for day, rows in intervals.groupby(intervals["operating_day"].dt.date, sort=True):
+            result, dump = _run_day(policy, scenario, cast(dt.date, day), rows, homes)
+            days.append(result)
+            dumps.append(dump)
+        return RunResult(Scorecard(policy.name, scenario.name, seed, tuple(days)),
+                         pd.concat(dumps, ignore_index=True))
+    finally:
+        if callable(close):
+            close()
 
 
-def _run_day(policy: Policy, scenario: Scenario, day: dt.date,
-             rows: pd.DataFrame) -> tuple[DayResult, pd.DataFrame]:
-    decisions = [policy.decide(obs) for obs in observations(rows, scenario)]
+def _run_day(policy: Policy, scenario: Scenario, day: dt.date, rows: pd.DataFrame,
+             homes: Sequence[Mapping[str, Any]] | None) -> tuple[DayResult, pd.DataFrame]:
+    # One operating day is one simulation. An external policy drops its process
+    # and its remembered decision here, so a range run stays equal to its days.
+    begin_day = getattr(policy, "begin_day", None)
+    if callable(begin_day):
+        begin_day()
+    faults_before = _faults(policy)
+    decisions = [policy.decide(obs) for obs in observations(rows, scenario, homes=homes)]
+    faults = _faults(policy) - faults_before
     flat = rows.reset_index()
     totals, dumps = {}, []
     for product, sfx in PRODUCTS.items():
@@ -108,4 +123,10 @@ def _run_day(policy: Policy, scenario: Scenario, day: dt.date,
             **{f"lz_spp_{z}": flat[f"lz_spp_{z}"] for z in LOAD_ZONES.values()},
         }))
     dump = pd.concat(dumps).sort_values(["interval_start_utc", "product"], kind="stable")
-    return DayResult(day, totals), dump.reset_index(drop=True)
+    return DayResult(day, totals, faults), dump.reset_index(drop=True)
+
+
+def _faults(policy: Policy) -> FaultCounts:
+    """Fault counts the policy has recorded, or zero for an in-process policy."""
+    faults = getattr(policy, "faults", None)
+    return faults if isinstance(faults, FaultCounts) else FaultCounts()

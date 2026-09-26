@@ -26,9 +26,26 @@ class ProductTotals:
 
 
 @dataclass(frozen=True)
+class FaultCounts:
+    """How often an external policy missed a decision. Stored as counts, like everything else."""
+
+    timeouts: int = 0
+    malformed: int = 0
+    restarts: int = 0
+    fallbacks: int = 0
+
+    def __add__(self, other: FaultCounts) -> FaultCounts:
+        return FaultCounts(**{f.name: getattr(self, f.name) + getattr(other, f.name) for f in fields(self)})
+
+    def __sub__(self, other: FaultCounts) -> FaultCounts:
+        return FaultCounts(**{f.name: getattr(self, f.name) - getattr(other, f.name) for f in fields(self)})
+
+
+@dataclass(frozen=True)
 class DayResult:
     day: dt.date
     products: dict[str, ProductTotals]
+    faults: FaultCounts = FaultCounts()
 
 
 @dataclass(frozen=True)
@@ -75,6 +92,13 @@ class Scorecard:
                 out[product] = out.get(product, ProductTotals()) + totals
         return out
 
+    @property
+    def faults(self) -> FaultCounts:
+        total = FaultCounts()
+        for day in self.days:
+            total += day.faults
+        return total
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "policy": self.policy,
@@ -83,7 +107,10 @@ class Scorecard:
             "start": self.start.isoformat(),
             "end": self.end.isoformat(),
             "totals": {p: asdict(t) for p, t in self.totals.items()},
-            "days": [{"day": d.day.isoformat(), "products": {p: asdict(t) for p, t in d.products.items()}}
+            "faults": asdict(self.faults),
+            "days": [{"day": d.day.isoformat(),
+                      "products": {p: asdict(t) for p, t in d.products.items()},
+                      "faults": asdict(d.faults)}
                      for d in self.days],
         }
 
@@ -96,6 +123,8 @@ class Scorecard:
         lines = [
             f"{self.policy} | scenario {self.scenario} | seed {self.seed}",
             f"{self.start} to {self.end} ({n} day{'s' if n != 1 else ''})",
+            (f"timeouts {self.faults.timeouts}  malformed {self.faults.malformed}"
+             f"  restarts {self.faults.restarts}  fallbacks {self.faults.fallbacks}"),
             "",
         ]
         header = ("Product", "Intervals", "Skipped", "Reported MW-h", "Awarded MW-h", "Revenue $")
