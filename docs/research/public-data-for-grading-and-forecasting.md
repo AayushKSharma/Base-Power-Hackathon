@@ -1,6 +1,6 @@
 # Public data for grading capacity algorithms and forecasting prices
 
-_Researched 2026-09-26. Method: read the gridstatus 0.36.0 source, the ERCOT public API spec bundled with it, and pulled one real 60-day SCED disclosure (operating day 2026-07-20). **[P]** means primary (ERCOT data or ERCOT API spec). **[G]** means the gridstatus source. **[O]** means our own pull and analysis. Anything marked "verify" is not yet confirmed._
+_Researched 2026-09-26; §1a and §2 corrected from the #22 ingest. Method: read the gridstatus 0.36.0 source, the ERCOT public API spec bundled with it, and pulled one real 60-day SCED disclosure (operating day 2026-07-20). **[P]** means primary (ERCOT data or ERCOT API spec). **[G]** means the gridstatus source. **[O]** means our own pull and analysis. Anything marked "verify" is not yet confirmed._
 
 ## TL;DR
 
@@ -24,7 +24,7 @@ _Researched 2026-09-26. Method: read the gridstatus 0.36.0 source, the ERCOT pub
 
    The DAM prices published the day before are a ready-made forecast of real-time prices.
 4. **Deployment events are the weakest link.** No single public "ERCOT deployed ECRS at time t" feed was found. The best options:
-   - base-point drops on ADER load resources (from item 1);
+   - base-point drops on ADER load resources (from item 1). These mostly track energy prices, not AS deployments (see §2), so on their own they are not a deployment detector;
    - RT reserves and reliability-deployment adders (NP6-323-CD);
    - control-room operations messages;
    - RT MCPC spikes as a proxy.
@@ -43,7 +43,7 @@ For each historical interval, an algorithm outputs capability K per product. We 
 
 - **Report:** NP3-965-ER, "60-Day Load Resource Data in SCED". It's published 60 days after the operating day, and the public API also serves an archive of it.
 - **Fields per SCED interval** (raw file, post-RTC column names):
-  - `SCED Timestamp`, `QSE`, `DME`, `Resource Name`, `Telemetered Resource Status`;
+  - `SCED Time Stamp` (gridstatus renames it `SCED Timestamp`), `QSE`, `DME`, `Resource Name`, `Telemetered Resource Status`;
   - `Max Power Consumption`, `Low Power Consumption`, `Real Power Consumption`, `Base Point`;
   - `AS Capability NSPIN`, `AS Capability ECRS`;
   - `AS Awards NSPIN`, `AS Awards ECRS` (and other products);
@@ -54,8 +54,8 @@ For each historical interval, an algorithm outputs capability K per product. We 
   | Resource | Avg flexible MW (RPC − LPC) | Max ECRS award | Max Non-Spin award | Mean abs(RPC − Base Point) | Max deviation |
   |---|---|---|---|---|---|
   | OB_ALD1 | 47.6 | 24.3 | 12.2 | 0.55 | 25.0 |
-  | SANSM_ALD1 | 21.4 | — | 7.0 | 0.14 | 6.1 |
-  | MIDNT_ALD1 | 6.6 | — | — | 0.01 | 0.3 |
+  | SANSM_ALD1 | 21.4 | 21.0 (held in 124 SCED runs) | 7.0 | 0.14 | 6.1 |
+  | MIDNT_ALD1 | 6.55 | 6.4 (held in all 288 runs) | — | 0.01 | 0.3 |
 
   - On OB_ALD1, awards switch from hour to hour between about 24.3 MW of ECRS and about 12.2 MW of Non-Spin.
   - Telemetered AS Capability sits flat at 10 (ECRS) and 30 (Non-Spin).
@@ -69,18 +69,24 @@ For each historical interval, an algorithm outputs capability K per product. We 
 
 ### 1b. How this data feeds the harness
 - **"Base actual" baseline:** replay Base's historical awards as a policy, so every algorithm is also scored as "vs. what Base did".
-- **Delivery grading:** in intervals where Base Point drops below consumption (dispatch down), measure how closely RPC follows. That's a real under-delivery signal for the pilot's largest participant.
+- **Delivery grading:** in intervals where Base Point drops below consumption (dispatch down), measure how closely RPC follows. That's a real under-delivery signal for the pilot's largest participant. Most of these are **energy dispatch**, not reserve deployments (see §2).
 - **Fleet-state mocks:** build P10/P25/P50/P75/P90 profiles of flexible MW (RPC − LPC) by hour of day and month from Base's own telemetry, scaled to any fleet size. The mocks come from real data, not invented numbers.
 
 ## 2. Deployment and scarcity signals
 
 | Signal | What it gives | Historical access | Notes |
 |---|---|---|---|
-| Base-point drops on ADER load resources | Direct evidence of dispatch-down for Base's resources | 60-day lag, NP3-965-ER [P][O] | Best for grading Base-like fleets |
+| Base-point drops on ADER load resources | Direct evidence of dispatch-down for Base's resources | 60-day lag, NP3-965-ER [P][O] | Good for grading delivery. **Mostly energy-driven, not AS deployments** (see the note below), so not a deployment detector on its own |
 | RT ORDC / reliability deployment price adders and reserves by SCED interval | System reserve levels and deployment adders | MIS keeps about 5 days [G]; the archive has older data (verify fields after RTC+B) | NP6-323-CD |
 | Control-room operations messages | Explicit deployment and EEA notices | Live page keeps about a month; older via Wayback snapshots [G] | Patchy but explicit |
 | RT MCPC spikes | Scarcity proxy | Full, from Dec 5, 2025 | Our current default proxy |
 | AS capacity monitor, real-time system conditions | Live reserves | "latest" only [G] | Can be recorded going forward, not backtested |
+
+**Dispatch-down is mostly energy-driven** [O, from the #22 ingest]. Two examples:
+- On 2026-07-20 at 20:20, OB_ALD1 and SANSM_ALD1 were dispatched down while the Houston SPP was about $330/MWh and ECRS MCPC was about $1.4.
+- On 2026-01-28, all three Base resources were dispatched down from 04:55 to about 08:00 CST. It started at about $350/MWh energy with low AS prices, then ran through a $399 ECRS spike.
+
+So a base-point drop alone doesn't identify an ECRS or Non-Spin deployment. It has to be combined with AS price, reserve and control-room signals. This is open question 6 in data/README.md.
 
 ## 3. Forecast inputs, point-in-time
 
