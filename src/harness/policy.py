@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
-from harness.observation import Observation
+from harness.observation import Observation, observed_capability_mw
 from harness.products import PRODUCTS
 from harness.scenario import Scenario
 
@@ -16,11 +16,16 @@ Capability = Mapping[str, float]
 
 
 class Policy(Protocol):
-    """Called once per 5-minute interval of a run.
+    """Called once per 5-minute interval of a run, returning MW for every product.
+
+    In quantile mode's default "typical" view there is one call per interval,
+    and the answer is scored against every quantile. In the "per_case" view
+    there is one call per interval for each quantile (five in all).
 
     Each operating day is simulated on its own, so a policy must not carry
-    state from one day to the next; otherwise a range run would no longer
-    equal its single-day runs.
+    state from one day to the next, or a range run would no longer equal its
+    single-day runs. In the "per_case" view it must not carry state from one
+    quantile to the next either.
     """
 
     @property
@@ -37,22 +42,21 @@ class PolicyError(ValueError):
 
 @dataclass(frozen=True)
 class ConstantHaircut:
-    """Report a fixed fraction of the fleet's nominal capability for every product."""
+    """Report a fixed fraction of the fleet's observed capability for every product."""
 
     fraction: float
-    nominal_mw: float
 
     @property
     def name(self) -> str:
         return f"constant_haircut(fraction={self.fraction:g})"
 
     def decide(self, observation: Observation) -> Capability:
-        return {product: self.fraction * self.nominal_mw for product in PRODUCTS}
+        return {product: self.fraction * observed_capability_mw(observation, product)
+                for product in PRODUCTS}
 
 
 def _constant_haircut(params: Mapping[str, str], scenario: Scenario) -> Policy:
-    fraction = _float_param(params, "fraction", default=0.9)
-    return ConstantHaircut(fraction=fraction, nominal_mw=scenario.fleet.nominal_mw)
+    return ConstantHaircut(fraction=_float_param(params, "fraction", default=0.9))
 
 
 # Built-in policy name -> (accepted parameters, builder).

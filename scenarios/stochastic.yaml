@@ -1,0 +1,44 @@
+# The baseline scenario with fleet.state switched to the stochastic failure model.
+# Values marked PLACEHOLDER are assumptions until Base supplies real ones
+# (docs/handoff.md, sections 1 and 8).
+seed: 7
+fleet:
+  homes: 1000              # PLACEHOLDER: handoff section 8's toy fleet
+  regions: 10              # PLACEHOLDER: failure domains; home i is in region i % 10
+  battery_kwh: 39.2        # Base Core
+  inverter_kw: 20          # Base Core
+  backup_floor: 0.2        # Base keeps at least 20% SOC for the member's backup
+  soc: {beta: [6, 4]}      # PLACEHOLDER: each home's SOC, drawn per day; mean 0.6 (section 8)
+  telemetry_stale_s: 180   # Base's rule: older telemetry is stale
+  state: stochastic        # quantile: score against quantile_mock P10..P90
+                           # stochastic: score against the failures model below
+  quantile_mock:           # used when fleet.state is quantile
+    shares:                # PLACEHOLDER: share of homes available
+      P10: 0.80
+      P25: 0.87
+      P50: 0.92
+      P75: 0.96
+      P90: 0.98
+    # typical: one decision per interval, from the typical fleet, scored against every quantile.
+    # per_case: one decision per interval for each quantile, from that quantile's own fleet.
+    policy_view: typical
+    typical: P50           # the quantile the policy sees in the typical view
+failures:
+  # Section 8 gives these as chances of losing a home or region during one
+  # deployment window; here they are chances per hour, so a 4-hour Non-Spin
+  # window sees about four times the loss of a 1-hour ECRS window.
+  home_dropout_per_h: 0.01     # PLACEHOLDER: section 8, calm (storm: 0.04)
+  home_dropout_min: 60         # PLACEHOLDER
+  region_outage_per_h: 0.005   # PLACEHOLDER: section 8, calm (storm: 0.08); homes go into backup mode
+  region_outage_min: 120       # PLACEHOLDER
+  scarcity_stress: 4           # PLACEHOLDER: both chances x4 in scarce intervals
+  forced_region_outages: []    # e.g. [{region: 3, start: "2026-08-26 18:00", minutes: 240}] (CPT)
+products:
+  ECRS:
+    duration_h: 1          # Protocols 8.1.1.3.4 (3.17.4 says 2 h)
+    cap_mw: 100            # ADER pilot cap, system-wide
+    cap_share: 0.9         # one QSE may hold at most 90% of the cap
+  NONSPIN:
+    duration_h: 4          # 2 h once NPRR1309 is implemented
+    cap_mw: 100
+    cap_share: 0.9
