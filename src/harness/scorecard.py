@@ -47,9 +47,26 @@ class ProductTotals:
 
 
 @dataclass(frozen=True)
+class FaultCounts:
+    """How often an external policy missed a decision. Stored as counts, like everything else."""
+
+    timeouts: int = 0
+    malformed: int = 0
+    restarts: int = 0
+    fallbacks: int = 0
+
+    def __add__(self, other: FaultCounts) -> FaultCounts:
+        return FaultCounts(**{f.name: getattr(self, f.name) + getattr(other, f.name) for f in fields(self)})
+
+    def __sub__(self, other: FaultCounts) -> FaultCounts:
+        return FaultCounts(**{f.name: getattr(self, f.name) - getattr(other, f.name) for f in fields(self)})
+
+
+@dataclass(frozen=True)
 class DayResult:
     day: dt.date
     products: dict[str, ProductTotals]
+    faults: FaultCounts = FaultCounts()
 
 
 @dataclass(frozen=True)
@@ -102,6 +119,14 @@ class Scorecard:
                 out[product] = out.get(product, ProductTotals()) + totals
         return out
 
+    @property
+    def faults(self) -> FaultCounts:
+        """Faults from the decision passes that produced this card, summed over days."""
+        total = FaultCounts()
+        for day in self.days:
+            total += day.faults
+        return total
+
     def to_dict(self) -> dict[str, Any]:
         """JSON form. Totals also carry the rates derived from them."""
         return {
@@ -115,7 +140,10 @@ class Scorecard:
             "end": self.end.isoformat(),
             "totals": {p: {**asdict(t), "overstatement_rate": t.overstatement_rate}
                        for p, t in self.totals.items()},
-            "days": [{"day": d.day.isoformat(), "products": {p: asdict(t) for p, t in d.products.items()}}
+            "faults": asdict(self.faults),
+            "days": [{"day": d.day.isoformat(),
+                      "products": {p: asdict(t) for p, t in d.products.items()},
+                      "faults": asdict(d.faults)}
                      for d in self.days],
         }
 
@@ -134,6 +162,7 @@ def render(cards: Sequence[Scorecard]) -> str:
     lines = [
         f"{first.policy} | scenario {first.scenario} | seed {first.seed}",
         f"{first.start} to {first.end} ({n} day{'s' if n != 1 else ''}) | {first.policy_view} view: {view}",
+        _faults_line(cards),
         "",
     ]
     header = ("Fleet case", "Product", "Revenue $", "Given up $", "Deliverable MW-h", "Over-sold MW-h",
@@ -150,3 +179,16 @@ def render(cards: Sequence[Scorecard]) -> str:
         lines.append("\nLeft out of $, settlement price missing: "
                      + ", ".join(f"{p} {s:,} intervals" for p, s in skipped.items()))
     return "\n".join(lines) + "\n"
+
+
+def _faults_line(cards: Sequence[Scorecard]) -> str:
+    """Fault counts for the decision passes. Copies shared by every case are printed once."""
+    counts = {card.fleet_case: card.faults for card in cards}
+    if len(set(counts.values())) == 1:
+        faults = next(iter(counts.values()))
+        return (f"timeouts {faults.timeouts}  malformed {faults.malformed}"
+                f"  restarts {faults.restarts}  fallbacks {faults.fallbacks}")
+    return "  ".join(
+        f"{case}: timeouts {faults.timeouts} malformed {faults.malformed}"
+        f" restarts {faults.restarts} fallbacks {faults.fallbacks}"
+        for case, faults in counts.items())

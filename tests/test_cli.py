@@ -1,10 +1,13 @@
 import json
+import sys
 
 import pandas as pd
 import pytest
 
 from conftest import SCENARIOS
 from harness.cli import main
+
+EXAMPLE = SCENARIOS.parents[0] / "examples" / "constant_haircut_policy.py"
 
 BASELINE = SCENARIOS / "baseline.yaml"
 
@@ -79,6 +82,20 @@ def test_an_invalid_scenario_is_reported_without_a_traceback(market_store, tmp_p
 
     assert code == 2
     assert "fleet: unknown field 'battery_kw'" in capsys.readouterr().err
+
+
+def test_an_external_command_matches_the_built_in_policy(market_store, tmp_path):
+    external = tmp_path / "external"
+    builtin = tmp_path / "builtin"
+    command = f"{sys.executable} {EXAMPLE} --fraction 0.8"
+
+    assert harness_run(market_store, external, "--policy", command,
+                       "--start", "2026-03-08", "--seed", "3") == 0
+    assert harness_run(market_store, builtin, "--policy", "constant_haircut", "--param", "fraction=0.8",
+                       "--start", "2026-03-08", "--seed", "3") == 0
+
+    assert json.loads((external / "scorecard.json").read_text()) == json.loads(
+        (builtin / "scorecard.json").read_text())
 
 
 def test_an_unknown_policy_parameter_is_reported(market_store, tmp_path, capsys):

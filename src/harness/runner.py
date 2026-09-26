@@ -19,10 +19,10 @@ What the policy observes depends on the view (see harness.scenario.QuantileMock)
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -35,7 +35,7 @@ from harness.policy import Policy
 from harness.products import LOAD_ZONES, PRODUCTS
 from harness.rng import RandomStreams
 from harness.scenario import PER_CASE, QUANTILE, TYPICAL, Scenario
-from harness.scorecard import DayResult, ProductTotals, Scorecard, to_json
+from harness.scorecard import DayResult, FaultCounts, ProductTotals, Scorecard, to_json
 
 INTERVAL_H = 5 / 60
 # K above D by less than this (MW) is float noise, not an overstatement.
@@ -70,11 +70,14 @@ def run(
     seed: int | None = None,
     *,
     market: MarketLoader | None = None,
+    homes: Sequence[Mapping[str, Any]] | None = None,
 ) -> RunResult:
     """Score `policy` on `scenario` over operating days [start, end].
 
     `seed` defaults to the scenario's. Market data comes only from `market`,
-    which defaults to the market-dataset loader.
+    which defaults to the market-dataset loader. `homes`, when given, is
+    attached to every observation; an external policy receives it only if its
+    handshake asks.
     """
     seed = scenario.seed if seed is None else seed
     streams = RandomStreams(scenario.name, seed)
@@ -85,25 +88,39 @@ def run(
     days: dict[str, list[DayResult]] = {}
     observed: dict[str, str] = {}
     dumps = []
-    for group, rows in intervals.groupby(intervals["operating_day"].dt.date, sort=True):
-        day = cast(dt.date, group)
-        cases = simulate_day(scenario, day, pd.DatetimeIndex(rows.index), _stressed(rows), streams)
-        if view == TYPICAL:
-            seen = next(c for c in cases if c.name == scenario.fleet.quantile_mock.typical)
-            decisions = _decide(policy, scenario, rows, seen)
-            plan = [(case, seen, decisions) for case in cases]
-        else:
-            plan = [(case, case, _decide(policy, scenario, rows, case)) for case in cases]
-        for case, seen, reported in plan:
-            result, dump = _score(scenario, day, rows, case, reported)
-            days.setdefault(case.name, []).append(result)
-            observed[case.name] = seen.name
-            dumps.append(dump.assign(policy_view=view, observed_case=seen.name))
-    return RunResult(
-        {case: Scorecard(policy.name, scenario.name, seed, case, view, observed[case], tuple(results))
-         for case, results in days.items()},
-        pd.concat(dumps, ignore_index=True),
-    )
+    close = getattr(policy, "close", None)
+    try:
+        for group, rows in intervals.groupby(intervals["operating_day"].dt.date, sort=True):
+            day = cast(dt.date, group)
+            cases = simulate_day(scenario, day, pd.DatetimeIndex(rows.index), _stressed(rows), streams)
+            if view == TYPICAL:
+                # One decision pass. Its faults are the same events on every case.
+                seen = next(c for c in cases if c.name == scenario.fleet.quantile_mock.typical)
+                faults, decisions = _decide(policy, scenario, rows, seen, homes)
+                plan = [(case, seen, decisions, faults) for case in cases]
+            else:
+                # A fresh pass per case, so a fallback cannot leak across quantiles.
+                plan = [_case_pass(policy, scenario, rows, case, homes) for case in cases]
+            for case, seen, reported, faults in plan:
+                result, dump = _score(scenario, day, rows, case, reported, faults)
+                days.setdefault(case.name, []).append(result)
+                observed[case.name] = seen.name
+                dumps.append(dump.assign(policy_view=view, observed_case=seen.name))
+        return RunResult(
+            {case: Scorecard(policy.name, scenario.name, seed, case, view, observed[case], tuple(results))
+             for case, results in days.items()},
+            pd.concat(dumps, ignore_index=True),
+        )
+    finally:
+        if callable(close):
+            close()
+
+
+def _case_pass(policy: Policy, scenario: Scenario, rows: pd.DataFrame, case: FleetCase,
+               homes: Sequence[Mapping[str, Any]] | None,
+               ) -> tuple[FleetCase, FleetCase, dict[str, np.ndarray], FaultCounts]:
+    faults, decisions = _decide(policy, scenario, rows, case, homes)
+    return case, case, decisions, faults
 
 
 def _stressed(rows: pd.DataFrame) -> np.ndarray:
@@ -116,14 +133,30 @@ def _mw_h(mw: np.ndarray) -> float:
     return float(mw.sum() * INTERVAL_H)
 
 
-def _decide(policy: Policy, scenario: Scenario, rows: pd.DataFrame, seen: FleetCase) -> dict[str, np.ndarray]:
-    """The policy's reported MW per product for each interval, seeing the fleet case `seen`."""
-    decisions = [policy.decide(obs) for obs in observations(rows, scenario, seen)]
-    return {product: np.array([float(d[product]) for d in decisions]) for product in PRODUCTS}
+def _decide(policy: Policy, scenario: Scenario, rows: pd.DataFrame, seen: FleetCase,
+           homes: Sequence[Mapping[str, Any]] | None) -> tuple[FaultCounts, dict[str, np.ndarray]]:
+    """The policy's reported MW per product for each interval, seeing the fleet case `seen`.
+
+    `begin_day`, when the policy has one, drops remembered state before the pass.
+    That reset is not a restart. The returned counts are this pass only.
+    """
+    begin_day = getattr(policy, "begin_day", None)
+    if callable(begin_day):
+        begin_day()
+    faults_before = _faults(policy)
+    decisions = [policy.decide(obs) for obs in observations(rows, scenario, seen, homes=homes)]
+    reported = {product: np.array([float(d[product]) for d in decisions]) for product in PRODUCTS}
+    return _faults(policy) - faults_before, reported
+
+
+def _faults(policy: Policy) -> FaultCounts:
+    """Fault counts the policy has recorded, or zero for an in-process policy."""
+    faults = getattr(policy, "faults", None)
+    return faults if isinstance(faults, FaultCounts) else FaultCounts()
 
 
 def _score(scenario: Scenario, day: dt.date, rows: pd.DataFrame, case: FleetCase,
-           reported_mw: dict[str, np.ndarray]) -> tuple[DayResult, pd.DataFrame]:
+           reported_mw: dict[str, np.ndarray], faults: FaultCounts) -> tuple[DayResult, pd.DataFrame]:
     """Score reported MW against the fleet case's true deliverable MW."""
     flat = rows.reset_index()
     totals, dumps = {}, []
@@ -171,4 +204,4 @@ def _score(scenario: Scenario, day: dt.date, rows: pd.DataFrame, case: FleetCase
             **{f"lz_spp_{z}": flat[f"lz_spp_{z}"] for z in LOAD_ZONES.values()},
         }))
     dump = pd.concat(dumps).sort_values(["interval_start_utc", "product"], kind="stable")
-    return DayResult(day, totals), dump.reset_index(drop=True)
+    return DayResult(day, totals, faults), dump.reset_index(drop=True)

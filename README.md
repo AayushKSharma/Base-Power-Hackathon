@@ -15,6 +15,9 @@ make typecheck
 .venv/bin/harness run --scenario scenarios/baseline.yaml --start 2026-08-20 --end 2026-08-31
 .venv/bin/harness run --policy constant_haircut --param fraction=0.8 \
     --scenario scenarios/stochastic.yaml --start 2026-03-08 --seed 3
+.venv/bin/harness run \
+    --policy "python examples/constant_haircut_policy.py --fraction 0.9" \
+    --scenario scenarios/baseline.yaml --start 2026-03-08 --seed 3
 ```
 
 The command prints a scorecard for each fleet case. It also writes two files to `data/runs/<scenario>_<policy>_<start>_<end>_seed<seed>/` (or `--out DIR`):
@@ -22,7 +25,7 @@ The command prints a scorecard for each fleet case. It also writes two files to 
 - `scorecard.json`, with one scorecard per fleet case. Each records `policy_view` and `observed_case`: the view that was used, and the fleet the policy saw.
 - `intervals.parquet`, the per-interval data dump
 
-`--end` defaults to `--start`, and `--seed` defaults to the scenario's `seed`. Run `harness run --help` for every option.
+`--end` defaults to `--start`, and `--seed` defaults to the scenario's `seed`. `--policy` is a built-in name or a shell-quoted external command. An external policy speaks JSON lines over stdin and stdout; see [docs/policy-protocol.md](docs/policy-protocol.md). Copy [examples/constant_haircut_policy.py](examples/constant_haircut_policy.py) to start one. `--decision-timeout` (default 1 second) and `--fallback` (`last_good` or `zero`) apply to that command. Run `harness run --help` for every option.
 
 Python equivalent:
 
@@ -92,7 +95,7 @@ result.scorecards["P10"].totals["ECRS"].oversold_mw_h
     - revenue = award of K × 15-minute RT settlement MCPC × 5/60 h.
     - Revenue given up is the regret against a hindsight oracle that reports exactly D: max(award of D − award of K, 0) × MCPC × 5/60 h. It is never negative. Shortfall costs come later.
   - **Unpriced intervals** are counted (`skipped`) and left out of the dollar sums.
-- **The scorecard stores per-day sums and counts, never rates.** Rates are derived when shown. That way days combine exactly, and the run farm can split work by day.
+- **The scorecard stores per-day sums and counts, never rates.** Rates are derived when shown. That way days combine exactly, and the run farm can split work by day. It also counts timeouts, malformed replies, restarts, and fallbacks from an external policy.
 - **Randomness** comes from a seeded generator tree: one stream per (scenario, seed, day, stream name), in `harness.RandomStreams`. The streams are `soc`, `availability`, `home_dropouts` and `region_outages`. The policy isn't part of the key, so every policy faces the same draws.
 
 ### Scenario file

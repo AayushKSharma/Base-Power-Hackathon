@@ -5,6 +5,7 @@
     result.scorecards["P10"].totals["ECRS"].oversold_mw_h
 """
 
+from harness.external import ExternalPolicy
 from harness.policy import ConstantHaircut, Policy, PolicyError
 from harness.rng import RandomStreams
 from harness.runner import RunResult, run
@@ -13,6 +14,7 @@ from harness.scorecard import Scorecard
 
 __all__ = [
     "ConstantHaircut",
+    "ExternalPolicy",
     "Policy",
     "PolicyError",
     "RandomStreams",

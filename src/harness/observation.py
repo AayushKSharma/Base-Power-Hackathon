@@ -9,15 +9,17 @@ keep working as later slices fill them in:
     forecaster  output of the configured price forecaster (empty for now)
     fleet       observed fleet state per region (see harness.fleet)
     products    product rules: duration, pilot cap and cap share
+    homes       per-home state, only when a run supplies it
 
 It holds only JSON values (missing data is None), so an external policy can
-receive it as is.
+receive it as JSON. Per-home state is omitted from that copy unless the
+policy's handshake asks for it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Any, TypedDict
+from collections.abc import Iterator, Mapping, Sequence
+from typing import Any, NotRequired, TypedDict
 
 import pandas as pd
 
@@ -64,6 +66,9 @@ class Observation(TypedDict):
     forecaster: dict[str, Any]
     fleet: FleetView
     products: dict[str, ProductView]
+    # Present only when the run supplies per-home state. An external policy
+    # receives it only after asking in the handshake.
+    homes: NotRequired[list[dict[str, Any]]]
 
 
 def observed_capability_mw(observation: Observation, product: str) -> float:
@@ -72,11 +77,16 @@ def observed_capability_mw(observation: Observation, product: str) -> float:
     return sum(r["capability_kw"][product] for r in observation["fleet"]["regions"]) / 1000
 
 
-def observations(rows: pd.DataFrame, scenario: Scenario, case: FleetCase) -> Iterator[Observation]:
+def observations(rows: pd.DataFrame, scenario: Scenario, case: FleetCase, *,
+                 homes: Sequence[Mapping[str, Any]] | None = None) -> Iterator[Observation]:
     """One observation per row of the market interval table, in order, seeing
-    the fleet as the fleet `case` has it at each interval's start."""
+    the fleet as the fleet `case` has it at each interval's start.
+
+    `homes` is copied onto every observation when given. The fleet model
+    reports regions, not per-home records; this is how a run can attach those.
+    """
     for i, (start, row) in enumerate(zip(pd.DatetimeIndex(rows.index), rows.to_dict("records"))):
-        yield Observation(
+        obs = Observation(
             now=Now(
                 interval_start_utc=start.isoformat(),
                 interval_start_cpt=row["interval_start_cpt"].isoformat(),
@@ -103,6 +113,9 @@ def observations(rows: pd.DataFrame, scenario: Scenario, case: FleetCase) -> Ite
             products={p: ProductView(duration_h=r.duration_h, cap_mw=r.cap_mw, cap_share=r.cap_share)
                       for p, r in scenario.products.items()},
         )
+        if homes is not None:
+            obs["homes"] = [dict(home) for home in homes]
+        yield obs
 
 
 def _number(value: Any) -> float | None:

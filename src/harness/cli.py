@@ -13,15 +13,17 @@ import argparse
 import datetime as dt
 import functools
 import re
+import shlex
 import sys
 from pathlib import Path
 
+from harness.external import ExternalPolicy
 from harness.market import MarketDataMissing, load_intervals
 from harness.market.dataset import default_store_dir
 from harness.paths import runs_dir
-from harness.policy import BUILTIN, PolicyError, builtin_policy
+from harness.policy import BUILTIN, Policy, PolicyError, builtin_policy
 from harness.runner import INTERVALS_FILE, SCORECARD_FILE, run
-from harness.scenario import ScenarioError, load_scenario
+from harness.scenario import Scenario, ScenarioError, load_scenario
 from harness.scorecard import render
 
 
@@ -32,9 +34,15 @@ def main(argv: list[str] | None = None) -> int:
 
     run_cmd = sub.add_parser("run", help="score one policy on one scenario over a date range")
     run_cmd.add_argument("--policy", default="constant_haircut",
-                         help=f"built-in policy: {', '.join(BUILTIN)} (default constant_haircut)")
+                         help=f"built-in policy ({', '.join(BUILTIN)}) or an external command "
+                              "(default constant_haircut)")
     run_cmd.add_argument("--param", action="append", default=[], metavar="KEY=VALUE",
-                         help="policy parameter, repeatable; constant_haircut takes fraction (default 0.9)")
+                         help="built-in policy parameter, repeatable; constant_haircut takes fraction (default 0.9)")
+    run_cmd.add_argument("--decision-timeout", type=float, default=1.0,
+                         help="seconds an external policy has to answer one decision (default 1)")
+    run_cmd.add_argument("--fallback", choices=("last_good", "zero"), default="last_good",
+                         help="capability used when an external policy times out, crashes, or replies "
+                              "badly (default last_good)")
     run_cmd.add_argument("--scenario", required=True, type=Path, help="scenario YAML file")
     run_cmd.add_argument("--start", required=True, type=dt.date.fromisoformat,
                          help="first operating day (CPT), YYYY-MM-DD")
@@ -59,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run(args: argparse.Namespace, end: dt.date) -> int:
     scenario = load_scenario(args.scenario)
-    policy = builtin_policy(args.policy, _params(args.param), scenario)
+    policy = _policy(args.policy, _params(args.param), scenario, args.decision_timeout, args.fallback)
     result = run(policy, scenario, args.start, end, args.seed,
                  market=functools.partial(load_intervals, store_dir=args.market_dir))
     cards = list(result.scorecards.values())
@@ -69,6 +77,16 @@ def _run(args: argparse.Namespace, end: dt.date) -> int:
     sys.stdout.write(render(cards))
     print(f"\nWrote {out / SCORECARD_FILE} and {INTERVALS_FILE}")
     return 0
+
+
+def _policy(spec: str, params: dict[str, str], scenario: Scenario, timeout_s: float,
+            fallback: str) -> Policy:
+    """A built-in policy, or an external command parsed with shell quoting."""
+    if spec in BUILTIN:
+        return builtin_policy(spec, params, scenario)
+    if params:
+        raise PolicyError("--param applies to built-in policies; put arguments in the --policy command")
+    return ExternalPolicy(shlex.split(spec), scenario.products, timeout_s=timeout_s, fallback=fallback)
 
 
 def _params(pairs: list[str]) -> dict[str, str]:
