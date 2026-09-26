@@ -9,3 +9,8 @@ data/raw/
 data/market/
 # Scorecards and data dumps from harness runs
 data/runs/
+
+# Local shell config and secrets: never commit credentials
+.zshrc
+.env
+.env.*
