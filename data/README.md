@@ -85,9 +85,9 @@ We confirmed these routes on 2026-09-26:
   - `get_mcpc_sced`, `get_mcpc_real_time_15_min`, `get_as_prices`, `get_as_demand_curves_dam_and_sced` and `get_as_total_capability` read the same MIS documents, but only reach back a few days, and they don't keep the raw files.
   - The builder talks to MIS directly so raw files can be cached, and it uses the history files above.
   - gridstatus's `ErcotAPI` handles route 3.
-- **ASDCs have no history file.**
-  - Without a key, the dataset has demand curves only for the last ~30 days, counted from each build. Every build adds the newly available days.
-  - With ERCOT API credentials, route 3 tries the Public API archive for older days. That route was written against gridstatus's `ErcotAPI.get_historical_data` but **has not been run**: no key was available, and we could not confirm that the API serves NP4-212-CD.
+- **ASDCs have no history file on MIS.**
+  - Without a key, the dataset has demand curves only for the last ~30 days, counted from each build. Every build adds the newly available days, and the quality report lists the operating days that still have no curve.
+  - With ERCOT API credentials, route 3 reads the Public API archive. Confirmed on 2026-09-26: the archive serves NP4-212-CD for every operating day from 2025-12-05. The route keeps the earliest publication of each day (usually the 04:55 CT post from the day before) and does not download later republishes.
 - The 2025 NP6-795-ER file has a single `MCPC` column, which we read as capped MCPC. The 2026 file and the live report have both `CAPPED_MCPC` and `UNCAPPED_MCPC`. The dataset uses capped, which is the settlement price.
 - NP4-181-ER's header has a stray space (`"REGUP "`). The parser strips header whitespace.
 
@@ -145,17 +145,18 @@ Both `data/raw/` and `data/market/` are git-ignored.
   - a price spike;
   - a day with a missing source file and a real SCED gap;
   - a **synthetic** fall-back day, because no fall-back has happened since RTC+B.
+- `tests/fixtures/api/np4-212-cd.csv` is a recorded slice of the public-API archive (the 2025-12-05 04:56 CT document). Route 3's tests read it offline.
 
 ## Dataset summary
 
 <!-- summary:start -->
-From the build on 2026-09-26, with no API key (see `data/market/quality_report.md` for the full report):
+From the build on 2026-09-26 (see `data/market/quality_report.md` for the full report):
 
 - **Range:** 2025-12-05 to 2026-09-25. That is 295 operating days and 84,948 five-minute rows, including the 276-row spring-forward day.
 - **Coverage:**
   - 15-minute settlement, day-ahead and load-zone prices are 100% covered.
   - 5-minute MCPC and AS capability are 99.99% covered. The 10 missing intervals are real SCED gaps, flagged `gap`.
-  - Demand curves are available for 2026-08-26 to 2026-09-25 only (key-free MIS keeps about 30 days).
+  - Demand curves cover every operating day. 2025-12-05 to 2026-08-25 came from the ERCOT Public API archive; 2026-08-26 to 2026-09-25 came from key-free MIS.
 - **Consistency check:** the average of each three 5-minute ECRS prices matches ERCOT's 15-minute settlement price to within $0.06/MW-h on average.
 - **Scarcity (default proxy, 99th percentile of 5-minute RT MCPC):**
 

@@ -20,6 +20,7 @@ import io
 import logging
 import os
 import re
+import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -388,47 +389,117 @@ class LiveRoute:
         return out
 
 
+# The first post of a daily report lands around 04:55 CT. A six-hour slice from
+# midnight contains it, so later republishes (some days have dozens) are never downloaded.
+ARCHIVE_SLICE = pd.Timedelta(hours=6)
+SLICE_ATTEMPTS = 4
+
+
 @dataclass
 class ApiRoute:
     """ERCOT Public API archive. Needs ERCOT_API_USERNAME, ERCOT_API_PASSWORD and
     ERCOT_PUBLIC_API_SUBSCRIPTION_KEY in the environment; never creates accounts.
+
+    `chunk_days` is how many operating days `fetch_missing` asks for at once.
+    One day at a time keeps a single archive document in memory: an ASDC day is
+    about 185,000 curve points.
     """
 
     name: str = "ercot-api"
+    chunk_days: int = 1
     _client: Any = field(default=None, repr=False)
 
     @staticmethod
     def available() -> bool:
         return all(os.environ.get(v) for v in API_ENV_VARS)
 
-    def fetch(self, report: Report, days: list[dt.date]) -> DayRows:
-        if not days:
-            return {}
+    def _api(self) -> Any:
         if self._client is None:
             from gridstatus.ercot_api.ercot_api import ErcotAPI
 
-            self._client = ErcotAPI()  # reads the ERCOT_API_* variables
-        start, _ = _publication_window(report, min(days))
-        _, end = _publication_window(report, max(days))
-        df = self._client.get_historical_data(
-            endpoint=f"/{report.id.lower()}/",
-            start_date=start,
-            end_date=end,
-            add_post_datetime=True,
-        )
+            # A bit slower than gridstatus's default: the archive rate-limits a full backfill.
+            self._client = ErcotAPI(sleep_seconds=1.0, max_retries=5)
+        return self._client
+
+    def _historical(self, report: Report, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame | None:
+        from gridstatus.base import NoDataFoundException
+
+        try:
+            df = self._api().get_historical_data(
+                endpoint=f"/{report.id.lower()}/",
+                start_date=start,
+                end_date=end,
+                add_post_datetime=True,
+            )
+        except NoDataFoundException:
+            return None
+        except KeyError as exc:
+            # An empty window comes back without an "archives" list. gridstatus
+            # raises KeyError instead of NoDataFoundException.
+            if exc.args != ("archives",):
+                raise
+            return None
         if df is None or df.empty:
-            return {}
-        df = df.astype({c: str for c in df.columns if c != "postDatetime"})
+            return None
+        return df.astype({c: str for c in df.columns if c != "postDatetime"})
+
+    def _rows_from_frame(self, report: Report, df: pd.DataFrame, days: list[dt.date]) -> DayRows:
         meta = {"route": self.name, "report": report.id}
         if not report.daily_documents:
             return _split_days(report, df, days, meta)
-        docs = [(pd.Timestamp(p), g) for p, g in df.groupby("postDatetime")]
+        docs = [(pd.Timestamp(str(p)), g) for p, g in df.groupby("postDatetime", sort=False)]
         out: DayRows = {}
         for day in days:
             rows = _earliest_publication_rows(report, docs, day)
-            if rows is not None:
-                out.update(_split_days(report, rows, [day], meta))
+            if rows is None:
+                continue
+            published = min(ts for ts, g in docs if (row_days(report, g) == day).any())
+            if published.tzinfo is None:
+                published = published.tz_localize(CPT)
+            out.update(_split_days(report, rows, [day], {**meta, "published": published.isoformat()}))
         return out
+
+    def fetch(self, report: Report, days: list[dt.date]) -> DayRows:
+        if not days:
+            return {}
+        if not report.daily_documents:
+            start, _ = _publication_window(report, min(days))
+            _, end = _publication_window(report, max(days))
+            df = self._historical(report, start, end)
+            return {} if df is None else self._rows_from_frame(report, df, days)
+        out: DayRows = {}
+        for day in days:
+            start, end = _publication_window(report, day)
+            cursor = start
+            while cursor < end:
+                slice_end = min(cursor + ARCHIVE_SLICE, end)
+                df, failed = self._slice(report, day, cursor, slice_end)
+                cursor = slice_end
+                if failed or df is None:
+                    continue
+                got = self._rows_from_frame(report, df, [day])
+                if day in got:
+                    log.info("%s via %s: %s", report.id, self.name, day)
+                    out.update(got)
+                    break
+            else:
+                log.info("%s via %s: no archive document for %s", report.id, self.name, day)
+            time.sleep(1)  # stay under the archive rate limit between days
+        return out
+
+    def _slice(
+        self, report: Report, day: dt.date, start: pd.Timestamp, end: pd.Timestamp
+    ) -> tuple[pd.DataFrame | None, bool]:
+        """One archive time slice, retried. Returns (frame, gave_up)."""
+        for attempt in range(SLICE_ATTEMPTS):
+            try:
+                return self._historical(report, start, end), False
+            except Exception as exc:
+                log.warning("%s via %s: %s at %s failed (%s), attempt %d/%d",
+                            report.id, self.name, day, start.isoformat(), exc,
+                            attempt + 1, SLICE_ATTEMPTS)
+                time.sleep(min(2 ** attempt, 8))
+        return None, True
 
 
 # ---------------------------------------------------------------------- fetcher
@@ -452,6 +523,14 @@ def default_routes(raw: RawCache) -> list[Route]:
     return routes
 
 
+def _batches(route: Route, days: list[dt.date]) -> list[list[dt.date]]:
+    """One request of the whole list, unless the route names a shorter chunk."""
+    size = getattr(route, "chunk_days", None)
+    if not size or size >= len(days):
+        return [days]
+    return [days[i : i + size] for i in range(0, len(days), size)]
+
+
 def fetch_missing(
     raw: RawCache,
     days: list[dt.date],
@@ -469,16 +548,22 @@ def fetch_missing(
         for route in routes:
             if not missing:
                 break
-            try:
-                rows = route.fetch(report, missing)
-            except Exception as exc:  # a failed route must not stop the others
-                errors.append(f"{report.id} via {route.name}: {exc}")
-                log.warning("%s via %s failed: %s", report.id, route.name, exc)
-                continue
-            for day, (df, meta) in sorted(rows.items()):
-                raw.write(report, day, df, meta)
-                got.append(day)
-            missing = [d for d in missing if d not in rows]
-        fetched[report.id] = sorted(got)
+            pending = set(missing)
+            for batch in _batches(route, missing):
+                batch = [d for d in batch if d in pending]
+                if not batch:
+                    continue
+                try:
+                    rows = route.fetch(report, batch)
+                except Exception as exc:  # a failed batch must not stop the other days
+                    errors.append(f"{report.id} via {route.name}: {exc}")
+                    log.warning("%s via %s failed: %s", report.id, route.name, exc)
+                    continue
+                for day, (df, meta) in sorted(rows.items()):
+                    raw.write(report, day, df, meta)
+                    got.append(day)
+                pending.difference_update(rows)
+            missing = [d for d in missing if d in pending]
+        fetched[report.id] = sorted(set(got))
         uncovered[report.id] = missing
     return FetchResult(fetched, uncovered, errors)
