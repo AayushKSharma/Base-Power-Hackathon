@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Market dataset: raw downloads and the normalized store are rebuilt locally
+data/raw/
+data/market/

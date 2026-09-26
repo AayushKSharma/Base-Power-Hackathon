@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "harness"
+version = "0.1.0"
+description = "Capacity-policy test harness for ERCOT ancillary services"
+requires-python = ">=3.11"
+dependencies = [
+    "gridstatus>=0.36",
+    "pandas>=2.2",
+    "pyarrow>=15",
+    "openpyxl>=3.1",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "mypy>=1.10", "pandas-stubs", "types-requests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    # pandas 2.3 constructing Timedelta under NumPy >= 2.5; not our code.
+    "ignore:The 'generic' unit for NumPy timedelta is deprecated:DeprecationWarning",
+]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "tests", "scripts"]
+ignore_missing_imports = true
+check_untyped_defs = true
