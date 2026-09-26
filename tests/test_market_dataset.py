@@ -185,14 +185,14 @@ def test_loader_works_with_the_network_disabled(store):
 
 
 def test_a_multi_day_range_is_one_contiguous_utc_index(tmp_path):
-    next_day = SPRING_FORWARD + dt.timedelta(days=1)  # no raw files for this day
-    build_dataset(SPRING_FORWARD, next_day, raw_dir=FIXTURE_RAW, store_dir=tmp_path, fetch=False)
+    last = SPRING_FORWARD + dt.timedelta(days=2)  # no raw files for this day
+    build_dataset(SPRING_FORWARD, last, raw_dir=FIXTURE_RAW, store_dir=tmp_path, fetch=False)
 
-    df = load_intervals(SPRING_FORWARD, next_day, store_dir=tmp_path)
+    df = load_intervals(SPRING_FORWARD, last, store_dir=tmp_path)
 
-    assert len(df) == 276 + 288
+    assert len(df) == 276 + 288 + 288
     assert set(df.index[1:] - df.index[:-1]) == {pd.Timedelta(minutes=5)}
-    assert (df.loc[df["operating_day"] == pd.Timestamp(next_day), "q_rt_mcpc_5m_ecrs"] == "no_source").all()
+    assert (df.loc[df["operating_day"] == pd.Timestamp(last), "q_rt_mcpc_5m_ecrs"] == "no_source").all()
 
 
 def test_loading_days_that_were_never_built_raises(store):

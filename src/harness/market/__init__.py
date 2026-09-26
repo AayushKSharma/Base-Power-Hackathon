@@ -9,6 +9,7 @@ data/README.md.
 
 from harness.market.dataset import (
     BuildResult,
+    MarketDataMissing,
     build_dataset,
     load_asdc,
     load_intervals,
@@ -19,6 +20,7 @@ from harness.market.scarcity import PriceThresholdScarcity, ScarcityProxy
 
 __all__ = [
     "BuildResult",
+    "MarketDataMissing",
     "PriceThresholdScarcity",
     "QualityReport",
     "ScarcityProxy",

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,6 +20,7 @@ from harness.market.raw import RawCache
 from harness.market.scarcity import DEFAULT_SCARCITY, History, ScarcityProxy
 from harness.market.sources import FetchResult, Route, default_routes, fetch_missing
 from harness.market.store import MarketStore
+from harness.paths import data_dir
 
 log = logging.getLogger(__name__)
 
@@ -32,10 +32,8 @@ DateLike = dt.date | str
 PathLike = Path | str
 
 
-def data_dir() -> Path:
-    """$HARNESS_DATA_DIR, or data/ at the repository root."""
-    env = os.environ.get("HARNESS_DATA_DIR")
-    return Path(env) if env else Path(__file__).resolve().parents[3] / "data"
+class MarketDataMissing(LookupError):
+    """The market dataset has not been built for the requested days."""
 
 
 def default_raw_dir() -> Path:
@@ -120,7 +118,7 @@ def _built_days(store: MarketStore, start: DateLike, end: DateLike) -> list[dt.d
     days = _days(start, end)
     missing = sorted(set(days) - set(store.days(INTERVALS)))
     if missing:
-        raise LookupError(
+        raise MarketDataMissing(
             f"market dataset in {store.root} is missing {len(missing)} day(s) between "
             f"{missing[0]} and {missing[-1]}; build them with: "
             f"python -m harness.market build --start {missing[0]} --end {missing[-1]}"
@@ -145,7 +143,7 @@ def load_intervals(
     """The 5-minute interval table for operating days [start, end] (CPT), indexed by
     `interval_start_utc`. Columns are documented in data/README.md.
 
-    Raises LookupError if any day in the range has not been built.
+    Raises MarketDataMissing (a LookupError) if any day in the range has not been built.
     """
     store = MarketStore(store_dir or default_store_dir())
     return _read_intervals(store, _built_days(store, start, end), scarcity)
@@ -183,7 +181,7 @@ def quality_report(
     last = _as_date(end) if end else dt.date.max
     days = [d for d in store.days(INTERVALS) if first <= d <= last]
     if not days:
-        raise LookupError(f"no built market data in {store.root} for that range; "
+        raise MarketDataMissing(f"no built market data in {store.root} for that range; "
                           "run: python -m harness.market build")
     intervals = _read_intervals(store, days, scarcity)
     # Proxies that are price thresholds can say what their thresholds are.

@@ -141,7 +141,7 @@ Both `data/raw/` and `data/market/` are git-ignored.
 - **Incremental builds.** A build fetches only the (report, day) raw files it doesn't already have. Use `--no-fetch` to re-normalize offline.
 - **Test fixtures.** `tests/fixtures/raw/` holds a few recorded days in the same layout (see `scripts/record_fixtures.py`):
   - a normal day;
-  - the spring-forward day;
+  - the spring-forward day, and the day after it (a contiguous two-day range for harness runs);
   - a price spike;
   - a day with a missing source file and a real SCED gap;
   - a **synthetic** fall-back day, because no fall-back has happened since RTC+B.

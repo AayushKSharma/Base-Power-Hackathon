@@ -7,6 +7,8 @@ into tests/fixtures/raw, in the same layout, so tests build with no network:
 
 - 2026-09-10  normal day, including the ASDC file
 - 2026-03-08  spring-forward day (23 hours)
+- 2026-03-09  the day after, so harness runs have a contiguous two-day range
+              across the DST change
 - 2026-08-26  price spike (ECRS and Non-Spin MCPC above $800/MW-h)
 - 2026-03-19  NP6-331-CD file deliberately left out; NP6-332-CD also has a real
               SCED gap at 10:35-10:45
@@ -34,6 +36,7 @@ CACHE = RawCache(ROOT / "data" / "raw")
 
 NORMAL = dt.date(2026, 9, 10)
 SPRING_FORWARD = dt.date(2026, 3, 8)
+AFTER_SPRING_FORWARD = dt.date(2026, 3, 9)
 SPIKE = dt.date(2026, 8, 26)
 MISSING_FILE = dt.date(2026, 3, 19)
 FALL_BACK = dt.date(2026, 11, 1)
@@ -41,6 +44,7 @@ FALL_BACK = dt.date(2026, 11, 1)
 RECORDED: dict[dt.date, tuple[Report, ...]] = {
     NORMAL: REPORTS,
     SPRING_FORWARD: tuple(r for r in REPORTS if r is not ASDC),
+    AFTER_SPRING_FORWARD: tuple(r for r in REPORTS if r is not ASDC),
     SPIKE: tuple(r for r in REPORTS if r is not ASDC),
     MISSING_FILE: tuple(r for r in REPORTS if r not in (ASDC, MCPC_15MIN)),
 }

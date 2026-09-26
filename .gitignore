@@ -7,3 +7,5 @@ __pycache__/
 # Market dataset: raw downloads and the normalized store are rebuilt locally
 data/raw/
 data/market/
+# Scorecards and data dumps from harness runs
+data/runs/
