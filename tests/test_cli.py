@@ -25,6 +25,7 @@ def test_harness_run_prints_scorecards_and_writes_json_and_a_data_dump(market_st
     assert [c["fleet_case"] for c in cards] == ["P10", "P25", "P50", "P75", "P90"]
     for card in cards:
         assert (card["policy"], card["scenario"], card["seed"]) == ("constant_haircut(fraction=0.8)", "baseline", 3)
+        assert (card["policy_view"], card["observed_case"]) == ("typical", "P50")
         assert (card["start"], card["end"]) == ("2026-03-08", "2026-03-09")
         assert [d["day"] for d in card["days"]] == ["2026-03-08", "2026-03-09"]
         assert card["totals"]["ECRS"]["intervals"] == 276 + 288
@@ -36,6 +37,8 @@ def test_harness_run_prints_scorecards_and_writes_json_and_a_data_dump(market_st
     # One row per interval, fleet case and product; its totals reconcile to the scorecards.
     dump = pd.read_parquet(out / "intervals.parquet")
     assert len(dump) == (276 + 288) * 5 * 2
+    assert set(dump["policy_view"]) == {"typical"}
+    assert set(dump["observed_case"]) == {"P50"}
     sums = dump.groupby(["fleet_case", "product"])[
         ["revenue", "revenue_given_up", "oversold_mw", "deliverable_mw"]].sum()
     for card in cards:
@@ -64,6 +67,7 @@ def test_a_stochastic_scenario_gives_one_scorecard(market_store, tmp_path):
 
     cards = json.loads((out / "scorecard.json").read_text())["scorecards"]
     assert [c["fleet_case"] for c in cards] == ["stochastic"]
+    assert (cards[0]["policy_view"], cards[0]["observed_case"]) == ("per_case", "stochastic")
 
 
 def test_an_invalid_scenario_is_reported_without_a_traceback(market_store, tmp_path, capsys):

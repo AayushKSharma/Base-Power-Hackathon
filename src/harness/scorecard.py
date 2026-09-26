@@ -56,7 +56,9 @@ class DayResult:
 class Scorecard:
     """One policy on one scenario, seed and fleet case, over a run of operating days.
 
-    The fleet case is a quantile mock ("P10" ... "P90") or "stochastic". Only
+    The fleet case is a quantile mock ("P10" ... "P90") or "stochastic", and
+    `observed_case` is the case the policy saw: the typical quantile in the
+    "typical" view, or the fleet case itself in the "per_case" view. Only
     per-day sums and counts are stored; totals are summed on demand, so a range
     scored day by day (say, on the run farm) combines to exactly the same
     scorecard as a single run over the range.
@@ -66,22 +68,23 @@ class Scorecard:
     scenario: str
     seed: int
     fleet_case: str
+    policy_view: str
+    observed_case: str
     days: tuple[DayResult, ...]
 
     @staticmethod
     def combine(cards: Iterable[Scorecard]) -> Scorecard:
-        """Merge scorecards of the same policy, scenario, seed and fleet case over disjoint days."""
+        """Merge scorecards of the same policy, scenario, seed, fleet case and view over disjoint days."""
         cards = list(cards)
-        labels = {(c.policy, c.scenario, c.seed, c.fleet_case) for c in cards}
+        labels = {(c.policy, c.scenario, c.seed, c.fleet_case, c.policy_view, c.observed_case) for c in cards}
         if len(labels) != 1:
-            raise ValueError("can only combine scorecards of one policy, scenario, seed and fleet case; "
+            raise ValueError("can only combine scorecards of one policy, scenario, seed, fleet case and view; "
                              f"got {sorted(labels)}")
         days = sorted((d for c in cards for d in c.days), key=lambda d: d.day)
         repeated = sorted({a.day for a, b in zip(days, days[1:]) if a.day == b.day})
         if repeated:
             raise ValueError(f"days scored more than once: {', '.join(map(str, repeated))}")
-        policy, scenario, seed, fleet_case = labels.pop()
-        return Scorecard(policy, scenario, seed, fleet_case, tuple(days))
+        return Scorecard(*labels.pop(), days=tuple(days))
 
     @property
     def start(self) -> dt.date:
@@ -106,6 +109,8 @@ class Scorecard:
             "scenario": self.scenario,
             "seed": self.seed,
             "fleet_case": self.fleet_case,
+            "policy_view": self.policy_view,
+            "observed_case": self.observed_case,
             "start": self.start.isoformat(),
             "end": self.end.isoformat(),
             "totals": {p: {**asdict(t), "overstatement_rate": t.overstatement_rate}
@@ -124,9 +129,11 @@ def render(cards: Sequence[Scorecard]) -> str:
     """The scorecards of one run (one per fleet case) as a terminal table."""
     first = cards[0]
     n = len(first.days)
+    view = (f"the policy saw the {first.observed_case} fleet, scored against each case"
+            if first.policy_view == "typical" else "the policy saw each case's own fleet")
     lines = [
         f"{first.policy} | scenario {first.scenario} | seed {first.seed}",
-        f"{first.start} to {first.end} ({n} day{'s' if n != 1 else ''})",
+        f"{first.start} to {first.end} ({n} day{'s' if n != 1 else ''}) | {first.policy_view} view: {view}",
         "",
     ]
     header = ("Fleet case", "Product", "Revenue $", "Given up $", "Deliverable MW-h", "Over-sold MW-h",

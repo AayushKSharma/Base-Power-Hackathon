@@ -60,7 +60,7 @@ def test_the_policy_observes_the_market_row_fleet_and_product_rules(market_store
     run(policy, fleet_scenario(shares={"P10": 1.0, "P25": 1.0, "P50": 1.0, "P75": 1.0, "P90": 1.0}),
         SPRING_FORWARD, SPRING_FORWARD, seed=1, market=recorded(market_store))
 
-    assert len(policy.seen) == 276 * 5  # once per interval for each quantile
+    assert len(policy.seen) == 276  # once per interval, from the typical quantile's fleet
     obs = next(o for o in policy.seen if o["now"]["interval_start_utc"] == "2026-03-08T08:00:00+00:00")
     assert set(obs) == {"now", "history", "forecasts", "forecaster", "fleet", "products"}
     # NP6-332-CD SCED run 03:00:22 CDT; NP6-905-CD HE04 interval 1.

@@ -17,6 +17,8 @@ from conftest import (
 from harness import ConstantHaircut, run
 
 HALF = {"P10": 0.5, "P25": 0.5, "P50": 0.5, "P75": 0.5, "P90": 0.5}
+# P10 is below 90% of P50, so a 90% haircut on the typical fleet over-sells the low quantiles.
+WIDE = {"P10": 0.5, "P25": 0.8, "P50": 1.0, "P75": 1.0, "P90": 1.0}
 
 
 def at(policy, cpt):
@@ -86,10 +88,10 @@ def test_a_full_haircut_never_overstates_a_fleet_that_nothing_happens_to(market_
             assert (totals.overstated, totals.undersold_mw_h) == (0, pytest.approx(0))
 
 
-def test_quantile_mode_scores_every_quantile_on_the_same_market_data(market_store):
+def test_per_case_view_reports_each_quantile_from_the_fleet_it_sees(market_store):
     shares = {"P10": 0.2, "P25": 0.4, "P50": 0.5, "P75": 0.8, "P90": 1.0}
 
-    cards = run(ConstantHaircut(fraction=0.9), fleet_scenario(shares=shares), SPRING_FORWARD,
+    cards = run(ConstantHaircut(fraction=0.9), fleet_scenario(shares=shares, view="per_case"), SPRING_FORWARD,
                 AFTER_SPRING_FORWARD, market=recorded(market_store)).scorecards
 
     assert list(cards) == ["P10", "P25", "P50", "P75", "P90"]
@@ -101,6 +103,51 @@ def test_quantile_mode_scores_every_quantile_on_the_same_market_data(market_stor
     # the same prices were used for every quantile.
     revenue = [c.totals["ECRS"].revenue for c in cards.values()]
     assert [r / revenue[-1] for r in revenue] == pytest.approx(list(shares.values()))
+
+
+def test_typical_view_scores_one_decision_against_every_quantile(market_store):
+    cards = run(ConstantHaircut(fraction=0.9), fleet_scenario(shares=WIDE), SPRING_FORWARD, SPRING_FORWARD,
+                market=recorded(market_store)).scorecards
+
+    # The policy sees the P50 fleet (100 homes x 8 kW = 0.8 MW) and reports 90% of it.
+    ecrs = {name: card.totals["ECRS"] for name, card in cards.items()}
+    assert ecrs["P10"].oversold_mw_h == pytest.approx(0.32 * 23)
+    assert ecrs["P25"].oversold_mw_h == pytest.approx(0.08 * 23)
+    assert ecrs["P50"].oversold_mw_h == 0
+    assert ecrs["P50"].undersold_mw_h == pytest.approx(0.08 * 23)
+    assert [t.reported_mw_h for t in ecrs.values()] == pytest.approx([0.72 * 23] * 5)
+    for card in cards.values():
+        assert (card.policy_view, card.observed_case) == ("typical", "P50")
+
+
+def test_typical_view_calls_the_policy_once_per_interval_and_per_case_five_times(market_store):
+    typical, per_case = Recorder(), Recorder()
+
+    run(typical, fleet_scenario(), SPRING_FORWARD, SPRING_FORWARD, market=recorded(market_store))
+    run(per_case, fleet_scenario(view="per_case"), SPRING_FORWARD, SPRING_FORWARD,
+        market=recorded(market_store))
+
+    assert len(typical.seen) == 276
+    assert len(per_case.seen) == 276 * 5
+
+
+def test_the_typical_quantile_is_the_fleet_the_policy_sees(market_store):
+    cards = run(ConstantHaircut(fraction=0.9), fleet_scenario(shares=WIDE, typical="P10"),
+                SPRING_FORWARD, SPRING_FORWARD, market=recorded(market_store)).scorecards
+
+    # P10 is 50 homes x 8 kW = 0.4 MW; a 90% haircut reports 0.36, below every quantile's D.
+    for card in cards.values():
+        assert card.observed_case == "P10"
+        assert card.totals["ECRS"].oversold_mw_h == 0
+        assert card.totals["ECRS"].reported_mw_h == pytest.approx(0.36 * 23)
+
+
+def test_the_data_dump_records_the_policy_view_and_the_fleet_the_policy_saw(market_store):
+    result = run(ConstantHaircut(fraction=0.9), fleet_scenario(shares=WIDE), SPRING_FORWARD,
+                 SPRING_FORWARD, market=recorded(market_store))
+
+    assert set(result.intervals["policy_view"]) == {"typical"}
+    assert set(result.intervals["observed_case"]) == {"P50"}
 
 
 def test_a_quantile_mock_table_varies_by_cpt_month_and_hour(market_store, tmp_path):

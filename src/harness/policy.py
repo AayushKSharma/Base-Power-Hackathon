@@ -16,12 +16,16 @@ Capability = Mapping[str, float]
 
 
 class Policy(Protocol):
-    """Called once per 5-minute interval of a run, for each fleet case.
+    """Called once per 5-minute interval of a run, returning MW for every product.
 
-    Each operating day and each fleet case (quantile mock) is simulated on its
-    own, so a policy must not carry state from one day or case to the next;
-    otherwise a range run would no longer equal its single-day runs, and one
-    quantile's decisions would leak into another's.
+    In quantile mode's default "typical" view there is one call per interval,
+    and the answer is scored against every quantile. In the "per_case" view
+    there is one call per interval for each quantile (five in all).
+
+    Each operating day is simulated on its own, so a policy must not carry
+    state from one day to the next, or a range run would no longer equal its
+    single-day runs. In the "per_case" view it must not carry state from one
+    quantile to the next either.
     """
 
     @property

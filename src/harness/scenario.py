@@ -29,6 +29,10 @@ QUANTILE = "quantile"  # quantile mocks: the share of the fleet available, P10..
 STOCHASTIC = "stochastic"  # correlated failure model: dropouts and regional outages
 QUANTILES = ("P10", "P25", "P50", "P75", "P90")
 
+# What the policy sees in quantile mode.
+TYPICAL = "typical"  # the typical quantile's fleet; its K is scored against every quantile's D
+PER_CASE = "per_case"  # each quantile's own fleet, deciding once per quantile
+
 
 class ScenarioError(ValueError):
     """An invalid scenario; the message names the offending field."""
@@ -60,9 +64,19 @@ class Soc:
 
 @dataclass(frozen=True, eq=False)
 class QuantileMock:
-    """Share of the fleet's homes available at each quantile, by CPT month and hour."""
+    """Share of the fleet's homes available at each quantile, by CPT month and hour,
+    and what the policy sees of it.
+
+    TYPICAL: the policy sees the `typical` quantile's fleet, and its one decision
+    per interval is scored against every quantile's true D. That measures
+    planning uncertainty: reality turning out worse (or better) than the fleet
+    the policy expected. PER_CASE: the policy sees each quantile's own fleet
+    and decides for each, so it only over-sells by reporting more than it sees.
+    """
 
     shares: dict[str, np.ndarray]  # quantile -> array of shape (12 months, 24 hours)
+    policy_view: str  # TYPICAL or PER_CASE
+    typical: str  # the quantile the policy sees in the TYPICAL view
 
     def share(self, quantile: str, month: np.ndarray, hour: np.ndarray) -> np.ndarray:
         """Shares for CPT months (1-12) and hours (0-23)."""
@@ -201,6 +215,16 @@ def _soc(value: Any, where: str) -> Soc:
 
 
 def _quantile_mock(value: Any, where: str, base_dir: Path | None) -> QuantileMock:
+    mock = _exact_fields(value, where, ("shares", "policy_view", "typical"))
+    if mock["policy_view"] not in (TYPICAL, PER_CASE):
+        raise ScenarioError(f"{where}.policy_view: expected {TYPICAL} or {PER_CASE}, got {mock['policy_view']!r}")
+    if mock["typical"] not in QUANTILES:
+        raise ScenarioError(f"{where}.typical: expected one of {', '.join(QUANTILES)}, got {mock['typical']!r}")
+    return QuantileMock(_shares(mock["shares"], f"{where}.shares", base_dir),
+                        policy_view=mock["policy_view"], typical=mock["typical"])
+
+
+def _shares(value: Any, where: str, base_dir: Path | None) -> dict[str, np.ndarray]:
     """Flat shares per quantile, or a CSV path with month,hour,P10,...,P90 columns."""
     if isinstance(value, str):
         path = (base_dir or Path.cwd()) / value
@@ -214,7 +238,7 @@ def _quantile_mock(value: Any, where: str, base_dir: Path | None) -> QuantileMoc
         _, month, hour = falling[0]
         raise ScenarioError(f"{where}: shares must not fall from P10 to P90 "
                             f"(month {month + 1}, hour {hour})")
-    return QuantileMock(shares)
+    return shares
 
 
 def _quantile_csv(path: Path, where: str) -> dict[str, np.ndarray]:

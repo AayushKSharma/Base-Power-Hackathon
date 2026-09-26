@@ -18,7 +18,7 @@ fleet:
   soc: {fixed: 0.6}
   telemetry_stale_s: 180
   state: quantile
-  quantile_mock: {P10: 0.8, P25: 0.85, P50: 0.9, P75: 0.95, P90: 1.0}
+  quantile_mock: {shares: {P10: 0.8, P25: 0.85, P50: 0.9, P75: 0.95, P90: 1.0}, policy_view: typical, typical: P50}
 products:
   ECRS: {duration_h: 1, cap_mw: 100, cap_share: 0.9}
   NONSPIN: {duration_h: 4, cap_mw: 100, cap_share: 0.9}
@@ -135,11 +135,15 @@ def test_quantile_mock_shares_must_be_numbers(tmp_path):
     (VALID.replace("soc: {fixed: 0.6}", "soc: {beta: [6]}"),
      "fleet.soc.beta: expected [a, b], got [6]"),
     (VALID.replace("P25: 0.85", "P25: 0.75"),
-     "fleet.quantile_mock: shares must not fall from P10 to P90 (month 1, hour 0)"),
+     "fleet.quantile_mock.shares: shares must not fall from P10 to P90 (month 1, hour 0)"),
     (VALID.replace("P50: 0.9, ", ""),
-     "fleet.quantile_mock: missing field 'P50'"),
+     "fleet.quantile_mock.shares: missing field 'P50'"),
     (VALID.replace("{P10: 0.8, P25: 0.85, P50: 0.9, P75: 0.95, P90: 1.0}", "nowhere.csv"),
-     "fleet.quantile_mock ("),
+     "fleet.quantile_mock.shares ("),
+    (VALID.replace("policy_view: typical", "policy_view: both"),
+     "fleet.quantile_mock.policy_view: expected typical or per_case, got 'both'"),
+    (VALID.replace("typical: P50", "typical: P40"),
+     "fleet.quantile_mock.typical: expected one of P10, P25, P50, P75, P90, got 'P40'"),
     (VALID.split("failures:")[0],
      "missing field 'failures'"),
     (VALID.replace("region: 3", "region: 4"),

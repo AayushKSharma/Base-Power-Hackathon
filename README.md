@@ -19,7 +19,7 @@ make typecheck
 
 The command prints a scorecard for each fleet case. It also writes two files to `data/runs/<scenario>_<policy>_<start>_<end>_seed<seed>/` (or `--out DIR`):
 
-- `scorecard.json`, with one scorecard per fleet case
+- `scorecard.json`, with one scorecard per fleet case. Each records `policy_view` and `observed_case`: the view that was used, and the fleet the policy saw.
 - `intervals.parquet`, the per-interval data dump
 
 `--end` defaults to `--start`, and `--seed` defaults to the scenario's `seed`. Run `harness run --help` for every option.
@@ -49,7 +49,15 @@ result.scorecards["P10"].totals["ECRS"].oversold_mw_h
   - Both happen at random with per-hour chances, and the chances are multiplied by `scarcity_stress` in scarce intervals.
   - Forced regional outages can be added at set times.
 - **SOC** is fixed or drawn per home and day, and doesn't change within the day yet.
-- **The policy is called once per 5-minute interval and fleet case.** It receives an **observation** and returns the MW it reports for each product (`{"ECRS": ..., "NONSPIN": ...}`).
+- **What the policy sees depends on the view.** It receives an **observation** and returns the MW it reports for each product (`{"ECRS": ..., "NONSPIN": ...}`).
+
+  | `fleet.quantile_mock.policy_view` | Calls per interval | What the policy sees |
+  |---|---|---|
+  | `typical` (the default) | one | The `typical` quantile's fleet. That one K is scored against every quantile's true D. |
+  | `per_case` | five, one per quantile | Each quantile's own fleet. |
+  | stochastic mode | one, for the `stochastic` case | That case's own fleet. Stochastic mode always decides per case. |
+
+  `typical` measures **planning uncertainty**: reality turns out worse or better than the typical fleet the policy planned for. Stochastic mode measures **operational uncertainty**: homes and regions drop out during the deployment window. In `per_case` the policy must not carry state from one quantile to the next; in `typical` there is only one call per interval.
 - **The observation has six sections:**
 
   | Section | Contents |
@@ -105,7 +113,9 @@ The handoff gives its calm and storm dropout chances per deployment window; here
 | `fleet.soc` | `{fixed: 0.6}`, or `{beta: [a, b]}` drawn per home and day |
 | `fleet.telemetry_stale_s` | Telemetry older than this is stale (180 s) |
 | `fleet.state` | `quantile` or `stochastic` |
-| `fleet.quantile_mock` | Used in quantile mode. Either flat shares `{P10: ..., P90: ...}`, or a CSV path (relative to the scenario) with columns `month,hour,P10,P25,P50,P75,P90`, one row per CPT month and hour. Shares may not fall from P10 to P90. |
+| `fleet.quantile_mock.shares` | Used in quantile mode. Either flat shares `{P10: ..., P90: ...}`, or a CSV path (relative to the scenario) with columns `month,hour,P10,P25,P50,P75,P90`, one row per CPT month and hour. Shares may not fall from P10 to P90. |
+| `fleet.quantile_mock.policy_view` | `typical` (default) or `per_case`. See the table above. |
+| `fleet.quantile_mock.typical` | The quantile the policy sees in the `typical` view (`P50` by default). |
 | `failures.home_dropout_per_h`, `failures.home_dropout_min` | Used in stochastic mode: the chance per hour that a home drops out, and how long |
 | `failures.region_outage_per_h`, `failures.region_outage_min` | Used in stochastic mode: the chance per hour that a region's grid goes down, and how long |
 | `failures.scarcity_stress` | Used in stochastic mode: both chances are multiplied by this in scarce intervals |
@@ -119,7 +129,7 @@ The handoff gives its calm and storm dropout chances per deployment window; here
 The dump has one row per 5-minute interval, fleet case and product. Columns:
 
 - `interval_start_utc`, `interval_start_cpt`, `operating_day`
-- `fleet_case`, `product`
+- `fleet_case`, `policy_view`, `observed_case`, `product`
 - `reported_mw`, `deliverable_mw`, `award_mw`, `oversold_mw`, `undersold_mw`
 - `rt_mcpc_5m`, `rt_mcpc_15m`, `scarce`
 - `priced`, `revenue` and `revenue_given_up` (the last two are `NaN` when not priced)

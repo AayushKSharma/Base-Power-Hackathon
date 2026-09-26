@@ -71,8 +71,9 @@ CALM = {**NO_FAILURES, "home_dropout_per_h": 0.01, "region_outage_per_h": 0.005}
 STORM = {**NO_FAILURES, "home_dropout_per_h": 0.04, "region_outage_per_h": 0.08}
 
 
-def fleet_scenario(*, state="quantile", shares=FLAT_SHARES, failures=NO_FAILURES, homes=100, regions=4,
-                   soc=0.6, ecrs_h=1, nonspin_h=4, cap_mw=100.0, cap_share=0.9, seed=7):
+def fleet_scenario(*, state="quantile", shares=FLAT_SHARES, view="typical", typical="P50",
+                   failures=NO_FAILURES, homes=100, regions=4, soc=0.6, ecrs_h=1, nonspin_h=4,
+                   cap_mw=100.0, cap_share=0.9, seed=7):
     """A small, hand-computable scenario.
 
     At the default 60% SOC each home has 8 kWh above its 20% floor and a 10 kW
@@ -83,7 +84,8 @@ def fleet_scenario(*, state="quantile", shares=FLAT_SHARES, failures=NO_FAILURES
         "fleet": {
             "homes": homes, "regions": regions, "battery_kwh": 20, "inverter_kw": 10,
             "backup_floor": 0.2, "soc": {"fixed": soc} if isinstance(soc, float) else soc,
-            "telemetry_stale_s": 180, "state": state, "quantile_mock": shares,
+            "telemetry_stale_s": 180, "state": state,
+            "quantile_mock": {"shares": shares, "policy_view": view, "typical": typical},
         },
         "failures": failures,
         "products": {

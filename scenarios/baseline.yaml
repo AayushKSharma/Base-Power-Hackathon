@@ -12,12 +12,17 @@ fleet:
   telemetry_stale_s: 180   # Base's rule: older telemetry is stale
   state: quantile          # quantile: score against quantile_mock P10..P90
                            # stochastic: score against the failures model below
-  quantile_mock:           # PLACEHOLDER: share of homes available; #24 calibrates it from
-    P10: 0.80              # Base's public telemetry. Give a CSV path instead for a table
-    P25: 0.87              # by CPT month and hour (columns month,hour,P10,...,P90).
-    P50: 0.92
-    P75: 0.96
-    P90: 0.98
+  quantile_mock:
+    shares:                # PLACEHOLDER: share of homes available; #24 calibrates it from
+      P10: 0.80            # Base's public telemetry. Give a CSV path instead for a table
+      P25: 0.87            # by CPT month and hour (columns month,hour,P10,...,P90).
+      P50: 0.92
+      P75: 0.96
+      P90: 0.98
+    # typical: one decision per interval, from the typical fleet, scored against every quantile.
+    # per_case: one decision per interval for each quantile, from that quantile's own fleet.
+    policy_view: typical
+    typical: P50           # the quantile the policy sees in the typical view
 failures:                  # used when fleet.state is stochastic
   # Section 8 gives these as chances of losing a home or region during one
   # deployment window; here they are chances per hour, so a 4-hour Non-Spin
