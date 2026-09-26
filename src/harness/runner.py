@@ -16,9 +16,10 @@ from typing import cast
 import numpy as np
 import pandas as pd
 
+from harness.forecast.catalog import DEFAULT_HORIZON
 from harness.market import load_intervals
 from harness.market.catalog import Q_OK, quality_column, scarce_column
-from harness.observation import observations
+from harness.observation import ForecastQuery, observations
 from harness.policy import Policy
 from harness.products import LOAD_ZONES, PRODUCTS
 from harness.scenario import Scenario
@@ -54,6 +55,8 @@ def run(
     seed: int | None = None,
     *,
     market: MarketLoader | None = None,
+    forecasts: ForecastQuery | None = None,
+    forecast_horizon: dt.timedelta = DEFAULT_HORIZON,
 ) -> RunResult:
     """Score `policy` on `scenario` over operating days [start, end].
 
@@ -68,7 +71,7 @@ def run(
     intervals = (market or load_intervals)(start, end)
     days, dumps = [], []
     for day, rows in intervals.groupby(intervals["operating_day"].dt.date, sort=True):
-        result, dump = _run_day(policy, scenario, cast(dt.date, day), rows)
+        result, dump = _run_day(policy, scenario, cast(dt.date, day), rows, forecasts, forecast_horizon)
         days.append(result)
         dumps.append(dump)
     return RunResult(Scorecard(policy.name, scenario.name, seed, tuple(days)),
@@ -76,8 +79,10 @@ def run(
 
 
 def _run_day(policy: Policy, scenario: Scenario, day: dt.date,
-             rows: pd.DataFrame) -> tuple[DayResult, pd.DataFrame]:
-    decisions = [policy.decide(obs) for obs in observations(rows, scenario)]
+             rows: pd.DataFrame, forecasts: ForecastQuery | None,
+             forecast_horizon: dt.timedelta) -> tuple[DayResult, pd.DataFrame]:
+    decisions = [policy.decide(obs) for obs in observations(
+        rows, scenario, forecasts=forecasts, forecast_horizon=forecast_horizon)]
     flat = rows.reset_index()
     totals, dumps = {}, []
     for product, sfx in PRODUCTS.items():

@@ -45,7 +45,7 @@ result.scorecard.totals["ECRS"].revenue
   | `now` | The interval's market row: start time (UTC and CPT), 5-minute RT MCPC and scarcity flag per product, RT price per load zone |
   | `products` | Pilot cap and cap share per product |
   | `history` | Empty for now |
-  | `forecasts` | Empty for now |
+  | `forecasts` | Latest forecast vintages posted at or before the interval, when `--forecasts` points at a forecast-input store. Empty otherwise |
   | `forecaster` | Empty for now |
   | `fleet` | Empty for now |
 

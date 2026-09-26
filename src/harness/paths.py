@@ -1,8 +1,10 @@
 """Where the harness keeps local data: $HARNESS_DATA_DIR, or data/ at the repo root.
 
-    data/raw/       raw ERCOT downloads (harness.market)
-    data/market/    the normalized market dataset (harness.market)
-    data/runs/      scorecards and data dumps written by `harness run`
+    data/raw/           raw ERCOT downloads (harness.market, harness.base_actual)
+    data/market/        the normalized market dataset and Base-actual table
+    data/forecast-raw/  raw forecast vintages (harness.forecast)
+    data/forecasts/     the point-in-time forecast-input store
+    data/runs/          scorecards and data dumps written by `harness run`
 
 All of it is git-ignored.
 """
