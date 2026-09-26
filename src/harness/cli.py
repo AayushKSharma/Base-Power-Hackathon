@@ -1,9 +1,10 @@
 """harness: score capacity policies on real ERCOT market data.
 
-    harness run --scenario scenarios/minimal.yaml --start 2026-03-08 --end 2026-03-09
+    harness run --scenario scenarios/baseline.yaml --start 2026-03-08 --end 2026-03-09
 
-Prints the scorecard and writes scorecard.json plus the per-interval data dump
-(intervals.parquet) to the output directory.
+Prints a scorecard per fleet case (quantile mock P10..P90, or stochastic) and
+writes scorecard.json plus the per-interval data dump (intervals.parquet) to the
+output directory.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from harness.paths import runs_dir
 from harness.policy import BUILTIN, PolicyError, builtin_policy
 from harness.runner import INTERVALS_FILE, SCORECARD_FILE, run
 from harness.scenario import ScenarioError, load_scenario
+from harness.scorecard import render
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -60,10 +62,11 @@ def _run(args: argparse.Namespace, end: dt.date) -> int:
     policy = builtin_policy(args.policy, _params(args.param), scenario)
     result = run(policy, scenario, args.start, end, args.seed,
                  market=functools.partial(load_intervals, store_dir=args.market_dir))
-    card = result.scorecard
+    cards = list(result.scorecards.values())
+    card = cards[0]
     out = args.out or runs_dir() / f"{card.scenario}_{_slug(card.policy)}_{card.start}_{card.end}_seed{card.seed}"
     result.write(out)
-    sys.stdout.write(card.to_table())
+    sys.stdout.write(render(cards))
     print(f"\nWrote {out / SCORECARD_FILE} and {INTERVALS_FILE}")
     return 0
 
