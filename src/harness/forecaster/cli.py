@@ -87,7 +87,8 @@ def run(args: argparse.Namespace) -> int:
         print(f"harness: error: {e}", file=sys.stderr)
         return 1
     try:
-        forecasters = [_build(spec, frame, args.decision_timeout, args.fallback) for spec in args.forecasters]
+        forecasters = [build_forecaster(spec, frame, args.decision_timeout, args.fallback)
+                       for spec in args.forecasters]
     except PolicyError as e:
         print(f"harness: error: {e}", file=sys.stderr)
         return 2
@@ -113,7 +114,11 @@ def run(args: argparse.Namespace) -> int:
     return 0
 
 
-def _build(spec: str, frame, timeout_s: float, fallback: str):
+def build_forecaster(spec: str, frame, timeout_s: float, fallback: str):
+    """A built-in forecaster, or an external command parsed with shell quoting.
+
+    `oracle` reads `frame`. The others do not.
+    """
     if spec == "oracle":
         return oracle(frame)
     if spec in BUILTINS:

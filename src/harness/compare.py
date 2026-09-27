@@ -18,11 +18,18 @@ LEFT, RIGHT, TOP, BOTTOM = 64.0, 560.0, 32.0, 280.0
 WIDTH, HEIGHT = 640, 320
 
 
-def write_comparison(results: list[RunResult], scenario: Scenario, out: Path) -> None:
-    """Write frontier.svg and exceedance.md for the scored policies."""
+def write_comparison(results: list[RunResult], scenario: Scenario, out: Path,
+                     forecast_value: str | None = None) -> None:
+    """Write frontier.svg and exceedance.md for the scored policies.
+
+    `forecast_value`, when a forecaster was used, is appended as a report section.
+    """
     out.mkdir(parents=True, exist_ok=True)
     (out / "frontier.svg").write_text(frontier_svg([_point(result) for result in results]))
-    (out / "exceedance.md").write_text(_exceedance(results, scenario))
+    text = _exceedance(results, scenario)
+    if forecast_value:
+        text = text.rstrip() + "\n\n" + forecast_value.strip() + "\n"
+    (out / "exceedance.md").write_text(text)
 
 
 def frontier_svg(points: list[tuple[str, float, float]]) -> str:

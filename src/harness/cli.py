@@ -3,6 +3,7 @@
     harness run --scenario scenarios/baseline.yaml --start 2026-03-08 --end 2026-03-09
     harness compare --policy constant_haircut --policy base_actual --scenario baseline --start 2026-03-08 --out compare
     harness replay --scenario scenarios/baseline.yaml --day 2026-03-08 --minutes 5 --out replay
+    harness value --policy independent_newsvendor --forecaster persistence --scenario baseline --start 2026-03-08 --out value
 
 Prints a scorecard per fleet case (quantile mock P10..P90, or stochastic) and
 writes scorecard.json, a markdown report (report.md) and the per-interval
@@ -36,6 +37,8 @@ from harness.base_actual import BASE_QSE, grade_delivery, load_base_actual
 from harness.compare import write_comparison
 from harness.external import ExternalPolicy
 from harness.farm import DEFAULT_DSN, Farm, load_sweep
+from harness.forecaster.cli import add_parser as add_forecast_parser
+from harness.forecaster.cli import build_forecaster, run as forecast_command
 from harness.forecast import ForecastStore
 from harness.forecast.catalog import DEFAULT_HORIZON
 from harness.market import MarketDataMissing, load_intervals
@@ -45,6 +48,7 @@ from harness.policy import BUILTIN, Policy, PolicyError, base_actual_policy, bui
 from harness.replay import ReplayError, replay as replay_day
 from harness.report import render_report
 from harness.runner import INTERVALS_FILE, REPORT_FILE, SCORECARD_FILE, run
+from harness.value import measure_forecast_value, render_forecast_value, write_forecast_value
 from harness.scenario import Scenario, ScenarioError, load_scenario, resolve_scenario
 from harness.scorecard import render, to_json
 
@@ -80,10 +84,10 @@ def main(argv: list[str] | None = None) -> int:
                          help="forecast-input store; fills each observation's forecasts from as_of")
     run_cmd.add_argument("--forecast-horizon", type=float, default=DEFAULT_HORIZON / dt.timedelta(hours=1),
                          help="hours of forecast valid time after each decision (default 168)")
+    run_cmd.add_argument("--forecaster",
+                         help="price forecaster whose output fills each observation "
+                              "(persistence, dam, rtd, net_load, oracle, or an external command)")
     run_cmd.add_argument("--out", type=Path, help=f"output directory (default {runs_dir()}/<run name>)")
-
-    from harness.forecaster.cli import add_parser as add_forecast_parser
-    from harness.forecaster.cli import run as forecast_command
 
     add_forecast_parser(sub)
     _add_farm_parsers(sub)
@@ -98,6 +102,9 @@ def main(argv: list[str] | None = None) -> int:
     compare.add_argument("--end", type=dt.date.fromisoformat, help="last operating day (default: --start)")
     compare.add_argument("--seed", type=_seed, help="random seed (default: the scenario's seed)")
     compare.add_argument("--market-dir", type=Path, help=f"market dataset (default {default_store_dir()})")
+    compare.add_argument("--forecaster",
+                         help="price forecaster whose output fills each observation; the comparison "
+                              "report then includes its value against the oracle and persistence")
     compare.add_argument("--out", type=Path, required=True, help="output directory")
 
     replay_cmd = sub.add_parser("replay", help="play one operating day on a 2-second simulated clock")
@@ -125,6 +132,28 @@ def main(argv: list[str] | None = None) -> int:
     replay_cmd.add_argument("--market-dir", type=Path, help=f"market dataset (default {default_store_dir()})")
     replay_cmd.add_argument("--out", type=Path, required=True, help="directory for timeline.json")
 
+    value = sub.add_parser(
+        "value",
+        help="score one policy with a forecaster, the oracle, and persistence",
+    )
+    value.add_argument("--policy", required=True,
+                       help=f"built-in policy ({', '.join(BUILTIN)}) or an external command")
+    value.add_argument("--param", action="append", default=[], metavar="KEY=VALUE",
+                       help="built-in policy parameter, repeatable")
+    value.add_argument("--forecaster", required=True,
+                       help="price forecaster to value against the oracle and persistence")
+    value.add_argument("--scenario", required=True, help="scenario YAML file, or a preset name")
+    value.add_argument("--start", required=True, type=dt.date.fromisoformat,
+                       help="first operating day (CPT), YYYY-MM-DD")
+    value.add_argument("--end", type=dt.date.fromisoformat, help="last operating day (default: --start)")
+    value.add_argument("--seed", type=_seed, help="random seed (default: the scenario's seed)")
+    value.add_argument("--market-dir", type=Path, help=f"market dataset (default {default_store_dir()})")
+    value.add_argument("--decision-timeout", type=float, default=1.0,
+                       help="seconds an external policy or forecaster has to answer (default 1)")
+    value.add_argument("--fallback", choices=("last_good", "zero"), default="last_good",
+                       help="used when an external policy or forecaster fails (default last_good)")
+    value.add_argument("--out", type=Path, required=True, help="output directory")
+
     args = parser.parse_args(argv)
     if args.command == "forecast":
         return forecast_command(args)
@@ -143,6 +172,15 @@ def main(argv: list[str] | None = None) -> int:
         try:
             return _replay(args)
         except (ScenarioError, PolicyError, ReplayError) as e:
+            print(f"harness: error: {e}", file=sys.stderr)
+            return 2
+        except MarketDataMissing as e:
+            print(f"harness: error: {e}", file=sys.stderr)
+            return 1
+    if args.command == "value":
+        try:
+            return _value(args)
+        except (ScenarioError, PolicyError) as e:
             print(f"harness: error: {e}", file=sys.stderr)
             return 2
         except MarketDataMissing as e:
@@ -173,12 +211,23 @@ def _compare(args: argparse.Namespace) -> int:
         return 2
     scenario = load_scenario(resolve_scenario(args.scenario))
     market = functools.partial(load_intervals, store_dir=args.market_dir)
+    frame = market(args.start, end) if args.forecaster else None
     results = []
+    sections = []
     for spec in args.policy:
-        policy = _policy(spec, {}, scenario, 1.0, "last_good",
-                         start=args.start, end=end, store_dir=args.market_dir)
-        results.append(run(policy, scenario, args.start, end, args.seed, market=market))
-    write_comparison(results, scenario, args.out)
+        def factory(spec: str = spec) -> Policy:
+            return _policy(spec, {}, scenario, 1.0, "last_good",
+                           start=args.start, end=end, store_dir=args.market_dir)
+
+        if args.forecaster and frame is not None:
+            report, result = measure_forecast_value(
+                factory, scenario, args.start, end, args.seed, market, args.forecaster, frame)
+            results.append(result)
+            sections.append(render_forecast_value(report))
+        else:
+            results.append(run(factory(), scenario, args.start, end, args.seed, market=market))
+    write_comparison(results, scenario, args.out,
+                     forecast_value="\n".join(sections) if sections else None)
     print(f"Wrote {args.out / 'frontier.svg'} and exceedance.md")
     return 0
 
@@ -198,15 +247,44 @@ def _replay(args: argparse.Namespace) -> int:
     return 0
 
 
+def _value(args: argparse.Namespace) -> int:
+    end = args.end or args.start
+    if end < args.start:
+        print(f"harness: error: --end {end} is before --start {args.start}", file=sys.stderr)
+        return 2
+    scenario = load_scenario(resolve_scenario(args.scenario))
+    market = functools.partial(load_intervals, store_dir=args.market_dir)
+    frame = market(args.start, end)
+    params = _params(args.param)
+
+    def factory() -> Policy:
+        return _policy(args.policy, params, scenario, args.decision_timeout, args.fallback,
+                       start=args.start, end=end, store_dir=args.market_dir)
+
+    report, _chosen = measure_forecast_value(
+        factory, scenario, args.start, end, args.seed, market, args.forecaster, frame,
+        timeout_s=args.decision_timeout, fallback=args.fallback)
+    write_forecast_value(report, args.out)
+    sys.stdout.write(render_forecast_value(report))
+    print(f"Wrote {args.out / 'value.json'} and {args.out / 'value.svg'}")
+    return 0
+
+
 def _run(args: argparse.Namespace, end: dt.date) -> int:
     scenario = load_scenario(resolve_scenario(args.scenario))
     policy = _policy(args.policy, _params(args.param), scenario, args.decision_timeout, args.fallback,
                      start=args.start, end=end, store_dir=args.market_dir)
     forecasts = ForecastStore(args.forecasts) if args.forecasts is not None else None
+    market = functools.partial(load_intervals, store_dir=args.market_dir)
+    forecaster = None
+    if args.forecaster:
+        forecaster = build_forecaster(
+            args.forecaster, market(args.start, end), args.decision_timeout, args.fallback)
     result = run(policy, scenario, args.start, end, args.seed,
-                 market=functools.partial(load_intervals, store_dir=args.market_dir),
+                 market=market,
                  forecasts=forecasts,
-                 forecast_horizon=dt.timedelta(hours=args.forecast_horizon))
+                 forecast_horizon=dt.timedelta(hours=args.forecast_horizon),
+                 forecaster=forecaster)
     cards = list(result.scorecards.values())
     card = cards[0]
     out = args.out or runs_dir() / f"{card.scenario}_{_slug(card.policy)}_{card.start}_{card.end}_seed{card.seed}"
