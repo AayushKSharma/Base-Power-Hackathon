@@ -3,8 +3,8 @@
     harness run --scenario scenarios/baseline.yaml --start 2026-03-08 --end 2026-03-09
 
 Prints a scorecard per fleet case (quantile mock P10..P90, or stochastic) and
-writes scorecard.json plus the per-interval data dump (intervals.parquet) to the
-output directory.
+writes scorecard.json, a markdown report (report.md) and the per-interval
+data dump (intervals.parquet) to the output directory.
 """
 
 from __future__ import annotations
@@ -24,8 +24,9 @@ from harness.market import MarketDataMissing, load_intervals
 from harness.market.dataset import default_store_dir
 from harness.paths import runs_dir
 from harness.policy import BUILTIN, Policy, PolicyError, builtin_policy
-from harness.runner import INTERVALS_FILE, SCORECARD_FILE, run
-from harness.scenario import Scenario, ScenarioError, load_scenario
+from harness.report import render_report
+from harness.runner import INTERVALS_FILE, REPORT_FILE, SCORECARD_FILE, run
+from harness.scenario import Scenario, ScenarioError, load_scenario, resolve_scenario
 from harness.scorecard import render
 
 
@@ -45,7 +46,9 @@ def main(argv: list[str] | None = None) -> int:
     run_cmd.add_argument("--fallback", choices=("last_good", "zero"), default="last_good",
                          help="capability used when an external policy times out, crashes, or replies "
                               "badly (default last_good)")
-    run_cmd.add_argument("--scenario", required=True, type=Path, help="scenario YAML file")
+    run_cmd.add_argument("--scenario", required=True,
+                         help="scenario YAML file, or a preset name (baseline, storm_houston, "
+                              "caps_lifted, nonspin_2h, ecrs_2h, fleet_10x)")
     run_cmd.add_argument("--start", required=True, type=dt.date.fromisoformat,
                          help="first operating day (CPT), YYYY-MM-DD")
     run_cmd.add_argument("--end", type=dt.date.fromisoformat, help="last operating day (default: --start)")
@@ -77,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run(args: argparse.Namespace, end: dt.date) -> int:
-    scenario = load_scenario(args.scenario)
+    scenario = load_scenario(resolve_scenario(args.scenario))
     policy = _policy(args.policy, _params(args.param), scenario, args.decision_timeout, args.fallback)
     forecasts = ForecastStore(args.forecasts) if args.forecasts is not None else None
     result = run(policy, scenario, args.start, end, args.seed,
@@ -88,8 +91,9 @@ def _run(args: argparse.Namespace, end: dt.date) -> int:
     card = cards[0]
     out = args.out or runs_dir() / f"{card.scenario}_{_slug(card.policy)}_{card.start}_{card.end}_seed{card.seed}"
     result.write(out)
+    (out / REPORT_FILE).write_text(render_report(result, scenario))
     sys.stdout.write(render(cards))
-    print(f"\nWrote {out / SCORECARD_FILE} and {INTERVALS_FILE}")
+    print(f"\nWrote {out / SCORECARD_FILE}, {INTERVALS_FILE}, and {REPORT_FILE}")
     return 0
 
 

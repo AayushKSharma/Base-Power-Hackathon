@@ -1,0 +1,7 @@
+# Pilot cap lifted from 100 MW to 500 MW. One QSE may still hold 90%.
+extends: baseline
+products:
+  ECRS:
+    cap_mw: 500
+  NONSPIN:
+    cap_mw: 500

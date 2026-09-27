@@ -1,0 +1,5 @@
+# NPRR1309: Non-Spin duration falls from 4 h to 2 h.
+extends: baseline
+products:
+  NONSPIN:
+    duration_h: 2

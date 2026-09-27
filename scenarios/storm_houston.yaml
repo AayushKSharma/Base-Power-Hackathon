@@ -1,0 +1,13 @@
+# A Houston-side regional outage with the storm dropout rates from handoff section 8.
+# Region 0 stands in for Houston; shortfall energy is priced at the Houston RT price.
+# PLACEHOLDER until Base names real failure domains.
+extends: baseline
+fleet:
+  state: stochastic
+failures:
+  home_dropout_per_h: 0.04
+  region_outage_per_h: 0.08
+  forced_region_outages:
+    - {region: 0, start: "2026-08-26 18:00", minutes: 240}
+scoring:
+  load_zone: HOUSTON
