@@ -13,9 +13,10 @@ The run farm evaluates a sweep in parallel:
 
     harness submit --sweep sweep.yaml
     harness work --market-dir data/market
-    harness aggregate --out data/runs/sweep
+    harness aggregate --out data/runs/sweep --compare-out compare
     harness status
     harness chaos --sweep sweep.yaml --seed 11 --workers 4
+    harness bench --sweep sweep.yaml --out bench
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from pathlib import Path
 import psycopg
 
 from harness.base_actual import BASE_QSE, grade_delivery, load_base_actual
+from harness.bench import WORKER_COUNTS, run_bench, temporary_database, write_bench
 from harness.compare import comparison_table, curve_policies, write_suite
 from harness.external import ExternalPolicy
 from harness.farm import DEFAULT_DSN, Farm, load_sweep
@@ -159,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "forecast":
         return forecast_command(args)
-    if args.command in {"submit", "work", "aggregate", "status", "chaos"}:
+    if args.command in {"submit", "work", "aggregate", "status", "chaos", "bench"}:
         return _farm_command(args)
     if args.command == "compare":
         try:
@@ -379,6 +381,21 @@ def _params(pairs: list[str]) -> dict[str, str]:
     return params
 
 
+def _worker_counts(text: str) -> tuple[int, ...]:
+    counts = []
+    for part in text.split(","):
+        piece = part.strip()
+        if not piece:
+            continue
+        count = int(piece)
+        if count < 1:
+            raise argparse.ArgumentTypeError(f"worker counts must be positive, got {piece}")
+        counts.append(count)
+    if not counts:
+        raise argparse.ArgumentTypeError(f"need at least one worker count, got {text!r}")
+    return tuple(counts)
+
+
 def _seed(text: str) -> int:
     seed = int(text)
     if seed < 0:
@@ -409,6 +426,10 @@ def _add_farm_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
     aggregate = sub.add_parser("aggregate", help="build scorecards from per-day results")
     aggregate.add_argument("--database", default=DEFAULT_DSN, help=f"Postgres URL (default {DEFAULT_DSN})")
     aggregate.add_argument("--out", type=Path, help="directory for one scorecard JSON per policy, scenario and seed")
+    aggregate.add_argument("--compare-out", type=Path,
+                           help="also write the harness compare table and charts from this sweep")
+    aggregate.add_argument("--market-dir", type=Path,
+                           help=f"market dataset for the reliability curve (default {default_store_dir()})")
 
     status = sub.add_parser("status", help="queued, leased, done and failed counts, plus throughput")
     status.add_argument("--database", default=DEFAULT_DSN, help=f"Postgres URL (default {DEFAULT_DSN})")
@@ -425,6 +446,38 @@ def _add_farm_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
                        help="times a raising job is tried before it is failed (default 3)")
     chaos.add_argument("--backoff-seconds", type=float, default=1,
                        help="base delay before a failed attempt is tried again (default 1)")
+
+    bench = sub.add_parser(
+        "bench",
+        help="measure scenario-days per minute, recovery after killing 20%% of workers, and jobs re-run",
+    )
+    bench.add_argument("--sweep", required=True, type=Path, help="sweep YAML file")
+    bench.add_argument("--out", required=True, type=Path, help="directory for bench.md")
+    bench.add_argument("--database", default=DEFAULT_DSN,
+                       help=f"Postgres URL used to create a throwaway database (default {DEFAULT_DSN})")
+    bench.add_argument("--market-dir", type=Path, help=f"market dataset (default {default_store_dir()})")
+    bench.add_argument("--workers", type=_worker_counts, default=WORKER_COUNTS,
+                       help="worker counts for throughput, comma-separated (default 1,8,32). "
+                            "Recovery uses the largest count and kills 20%% of them")
+    bench.add_argument("--lease-seconds", type=float, default=1.0,
+                       help="how long a killed worker's job stays leased (default 1)")
+
+
+def _write_sweep_comparison(farm: Farm, market_dir: Path, out: Path) -> None:
+    """The same table and charts as `harness compare` over this sweep's policies and scenarios."""
+    start, end, seed, groups = farm.runs()
+    market = functools.partial(load_intervals, store_dir=market_dir)
+    completed = []
+    for scenario, results in groups:
+        names = {next(iter(result.scorecards.values())).policy for result in results}
+        scored = list(results)
+        for policy in curve_policies(scenario, names):
+            scored.append(run(policy, scenario, start, end, seed, market=market))
+        completed.append((scenario, scored))
+    write_suite(completed, out, start)
+    sys.stdout.write(comparison_table(completed))
+    print(f"Wrote {out / 'comparison.md'}, {out / 'intervals.parquet'}, "
+          f"{out / 'frontier.svg'}, exceedance.md, and {out / 'charts'}")
 
 
 def _farm_command(args: argparse.Namespace) -> int:
@@ -477,6 +530,20 @@ def _farm_command(args: argparse.Namespace) -> int:
             )
             print(f"completed {chaos_report.committed} jobs")
             return 0
+        if args.command == "bench":
+            if args.lease_seconds <= 0:
+                print("harness: error: --lease-seconds must be positive", file=sys.stderr)
+                return 2
+            if args.market_dir is None:
+                args.market_dir = default_store_dir()
+            with temporary_database(args.database) as dsn:
+                farm = Farm(dsn, market_dir=args.market_dir,
+                            lease=dt.timedelta(seconds=args.lease_seconds))
+                text = run_bench(farm, load_sweep(args.sweep), args.workers)
+            path = write_bench(text, args.out)
+            sys.stdout.write(text)
+            print(f"Wrote {path}")
+            return 0
         if args.command == "aggregate":
             farm = Farm(args.database, market_dir=None)
             cards = farm.aggregate()
@@ -486,6 +553,10 @@ def _farm_command(args: argparse.Namespace) -> int:
                     name = _slug(f"{scenario}_{policy}_seed{seed}")
                     (args.out / f"{name}.json").write_text(to_json(list(scorecards.values())))
             print(f"aggregated {len(cards)} scorecards")
+            if args.compare_out is not None:
+                if args.market_dir is None:
+                    args.market_dir = default_store_dir()
+                _write_sweep_comparison(farm, args.market_dir, args.compare_out)
             return 0
         report = Farm(args.database, market_dir=None).status()
         print(f"queued {report.queued}  leased {report.leased}  done {report.done}  failed {report.failed}")
