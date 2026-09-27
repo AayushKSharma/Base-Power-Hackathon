@@ -54,6 +54,7 @@ class JsonChild:
         self._timeout_s = timeout_s
         self._fallback_mode = fallback
         self._name = " ".join(self.command)
+        self._version = ""
         self._wants_per_home = False
         self.look_ahead = False
         self._hello: dict[str, Any] | None = None
@@ -70,13 +71,24 @@ class JsonChild:
         return self._name
 
     @property
+    def version(self) -> str:
+        """The policy's version, from its hello. Empty until the handshake."""
+        return self._version
+
+    @property
     def faults(self) -> FaultCounts:
         """Cumulative counts. The caller subtracts a day's opening value."""
         return self._faults
 
-    def begin_day(self) -> None:
-        """Drop the child and the remembered reply. This is not a restart."""
-        self._stop()
+    def begin_day(self, *, restart: bool = True) -> None:
+        """Drop the remembered reply. This is not a restart.
+
+        `restart` also drops the child. The run farm keeps the child across jobs
+        (`restart=False`) and still forgets the reply, so a new day does not
+        inherit a fallback from the previous one.
+        """
+        if restart:
+            self._stop()
         self._last_good = None
 
     def request(self, message_for: Callable[[bool], Mapping[str, Any]],
@@ -132,7 +144,7 @@ class JsonChild:
             self._add(malformed=1, fallbacks=1)
             self._stop()
             return False
-        self._name, _, self._wants_per_home = parsed
+        self._name, self._version, self._wants_per_home = parsed
         self._hello = message
         look_ahead = message.get("look_ahead", False)
         self.look_ahead = look_ahead if isinstance(look_ahead, bool) else False
@@ -243,16 +255,33 @@ class ExternalPolicy:
         return self._child.name
 
     @property
+    def version(self) -> str:
+        """The policy's version, from its hello. Empty until `start` or the first decision."""
+        return self._child.version
+
+    @property
     def faults(self) -> FaultCounts:
         return self._child.faults
 
-    def begin_day(self) -> None:
-        """Drop the child and the remembered decision. This is not a restart.
+    def start(self) -> None:
+        """Handshake so `name` and `version` are the policy's own.
+
+        A failed hello is a PolicyError. The caller closes the process.
+        """
+        if self._child._ready:
+            return
+        if not self._child._handshake():
+            raise PolicyError(f"policy {self.command[0]!r} failed its hello")
+
+    def begin_day(self, *, restart: bool = True) -> None:
+        """Drop the remembered decision. This is not a restart.
 
         Each operating day is simulated on its own, so a range run keeps matching
-        the combination of its single-day runs.
+        the combination of its single-day runs. `restart=False` keeps the process
+        and only forgets the decision; the run farm uses that to reuse one process
+        across jobs.
         """
-        self._child.begin_day()
+        self._child.begin_day(restart=restart)
 
     def decide(self, observation: Observation) -> Capability:
         return self._child.request(
