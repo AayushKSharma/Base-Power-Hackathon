@@ -74,22 +74,21 @@ bench:
 		--out docs/bench
 
 # Live replay of the demo day: 2026-08-17, the day the headline comparison charts.
-# Five simulated minutes. A whole-day replay omits --minutes.
-replay:
-	$(PY) -m harness replay \
-		--scenario baseline \
-		--policy constant_haircut \
-		--day 2026-08-17 \
-		--minutes 5 $(if $(MARKET_DIR),--market-dir $(MARKET_DIR)) \
-		--out data/replay
+# DAY= MINUTES= OUT= override the defaults.
+DAY ?= 2026-08-17
+MINUTES ?= 5
 
-# harness replay has no chaos-schedule flag. This is the same demo-day replay.
-# The seeded chaos schedule is the live-replay stretch.
+replay:
+	$(PY) -m harness replay --policy constant_haircut \
+		--scenario baseline --day $(DAY) --minutes $(MINUTES) \
+		--seed 7 --out $(if $(OUT),$(OUT),data/replay) $(if $(MARKET_DIR),--market-dir $(MARKET_DIR))
+
+# The same demo day with chaos/demo.yaml. Postgres is reused when it is already up.
 chaos:
-	@echo "Seeded chaos schedule is the live-replay stretch; replaying the demo day 2026-08-17."
-	$(PY) -m harness replay \
-		--scenario baseline \
-		--policy constant_haircut \
-		--day 2026-08-17 \
-		--minutes 5 $(if $(MARKET_DIR),--market-dir $(MARKET_DIR)) \
-		--out data/replay
+	@$(PY) -c "import psycopg; psycopg.connect('postgresql://harness:harness@127.0.0.1:54329/harness').close()" \
+		|| docker compose up -d --wait
+	$(PY) -m harness replay --policy constant_haircut \
+		--scenario baseline --day $(DAY) --minutes $(MINUTES) \
+		--seed 7 --chaos chaos/demo.yaml \
+		--database postgresql://harness:harness@127.0.0.1:54329/harness \
+		--out $(if $(OUT),$(OUT),data/replay) $(if $(MARKET_DIR),--market-dir $(MARKET_DIR))

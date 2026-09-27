@@ -86,7 +86,8 @@ NO_SHORTFALL_DOLLARS = {
 
 def fleet_scenario(*, state="quantile", shares=FLAT_SHARES, view="typical", typical="P50",
                    failures=NO_FAILURES, homes=100, regions=4, soc=0.6, ecrs_h=1, nonspin_h=4,
-                   cap_mw=100.0, cap_share=0.9, seed=7, deployments=NO_DEPLOYS, scoring=NO_SHORTFALL_DOLLARS):
+                   cap_mw=100.0, cap_share=0.9, seed=7, deployments=NO_DEPLOYS,
+                   scoring=NO_SHORTFALL_DOLLARS, telemetry_stale_s=180):
     """A small, hand-computable scenario.
 
     At the default 60% SOC each home has 8 kWh above its 20% floor and a 10 kW
@@ -97,7 +98,7 @@ def fleet_scenario(*, state="quantile", shares=FLAT_SHARES, view="typical", typi
         "fleet": {
             "homes": homes, "regions": regions, "battery_kwh": 20, "inverter_kw": 10,
             "backup_floor": 0.2, "soc": {"fixed": soc} if isinstance(soc, float) else soc,
-            "telemetry_stale_s": 180, "state": state,
+            "telemetry_stale_s": telemetry_stale_s, "state": state,
             "quantile_mock": {"shares": shares, "policy_view": view, "typical": typical},
         },
         "failures": failures,

@@ -14,7 +14,7 @@ import json
 import multiprocessing
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -26,8 +26,10 @@ from harness.market import load_intervals
 from harness.market.catalog import scarce_column
 from harness.policy import Policy
 from harness.products import PRODUCTS
+from harness.replay.chaos import ChaosEvent, ChaosSchedule
+from harness.replay.metrics import ReplayMetrics, empty_metrics, measure
 from harness.replay.transport import CommandTransport, Transport
-from harness.replay.workers import run_coordinator, run_host
+from harness.replay.workers import region_deliverable_mw, run_coordinator, run_host
 from harness.rng import RandomStreams
 from harness.runner import _deployments
 from harness.scenario import QUANTILE, Scenario
@@ -115,6 +117,12 @@ class ReplayResult:
     ticks: tuple[Tick, ...]
     double_discharges: int = 0
     floor_breaches: int = 0
+    coordinator_restarts: int = 0
+    dead_commands: int = 0
+    metrics: ReplayMetrics = field(default_factory=empty_metrics)
+    events: tuple[ChaosEvent, ...] = ()
+    incomplete: bool = False
+    clock_s: float = 0.0
 
     def write(self, path: Path) -> None:
         """Write the timeline next to anything else the caller asked for."""
@@ -125,6 +133,11 @@ class ReplayResult:
             "tick_s": self.tick_s,
             "double_discharges": self.double_discharges,
             "floor_breaches": self.floor_breaches,
+            "coordinator_restarts": self.coordinator_restarts,
+            "dead_commands": self.dead_commands,
+            "metrics": self.metrics.as_dict(),
+            "events": [_event_payload(event) for event in self.events],
+            "incomplete": self.incomplete,
             "ticks": [
                 {
                     "t_s": tick.t_s,
@@ -164,6 +177,9 @@ def replay(
     commands: CommandFaults | None = None,
     coordinator_kills: Sequence[CoordinatorKill] = (),
     dsn: str | None = None,
+    chaos: ChaosSchedule | None = None,
+    chart: Path | None = None,
+    wall_s: float | None = None,
 ) -> ReplayResult:
     """Replay `day` and return the timeline of reported capability versus true deliverable MW.
 
@@ -171,9 +187,13 @@ def replay(
     whole operating day. `speed` is simulated seconds per wall-clock second.
     The default spends no time waiting, so the clock runs as fast as the
     processes allow. `kills` stops agent-host processes. `transport` injects
-    drop, delay, and partition on heartbeats. `commands` duplicates or reorders
+    drop, delay, and partition on heartbeats.     `commands` duplicates or reorders
     the allocation commands. `coordinator_kills` restarts the coordinator from
-    `dsn`. `out`, when given, is the timeline file.
+    `dsn`. `chaos` injects the schedule's failures at their simulated times.
+    `out`, when given, is the timeline file. `chart`, when given, is the timeline chart.
+    `wall_s`, when given, is a wall-clock budget for fleet setup and the clock.
+    Past the budget the result is incomplete, and setup that already used the
+    budget does not start the processes.
     """
     if not multiprocessing_available():
         raise ReplayError("multiprocessing is not available")
@@ -183,6 +203,9 @@ def replay(
         raise ReplayError(f"minutes must be positive, got {minutes}")
     if speed is not None and speed <= 0:
         raise ReplayError(f"speed must be positive, got {speed}")
+    if wall_s is not None and wall_s <= 0:
+        raise ReplayError(f"wall_s must be positive, got {wall_s}")
+    opened = time.perf_counter()
     seed = scenario.seed if seed is None else seed
     rows = (market or load_intervals)(day, day)
     if len(rows) == 0:
@@ -192,13 +215,43 @@ def replay(
     case = _policy_case(scenario, simulate_day(
         scenario, day, pd.DatetimeIndex(rows.index), _stressed(rows), streams))
     deployed = _deployments(scenario, day, rows, streams)
-    ticks, double_discharges, floor_breaches = _play(
+    remaining = wall_s
+    if wall_s is not None:
+        remaining = wall_s - (time.perf_counter() - opened)
+        if remaining <= 0:
+            metrics = measure(
+                [], chaos, scenario.fleet.regions, floor_violations=0,
+                duplicate_commands=0, dead_commands=0)
+            return ReplayResult(
+                day, seed, tick_s, (), 0, 0, 0, 0, metrics,
+                () if chaos is None else chaos.events, True, 0.0)
+    ticks, double_discharges, floor_breaches, coordinator_restarts, dead_commands, metrics, incomplete, clock_s = _play(
         policy, scenario, day, seed, rows, case, span_s, tick_s, speed, kills, transport,
-        deployed, commands, coordinator_kills, dsn)
-    result = ReplayResult(day, seed, tick_s, tuple(ticks), double_discharges, floor_breaches)
+        deployed, commands, coordinator_kills, dsn, chaos, remaining)
+    result = ReplayResult(
+        day, seed, tick_s, tuple(ticks), double_discharges, floor_breaches, coordinator_restarts,
+        dead_commands, metrics, () if chaos is None else chaos.events, incomplete, clock_s)
     if out is not None:
         result.write(out)
+    if chart is not None:
+        from harness.replay.chart import write_timeline_chart
+        write_timeline_chart(result, chart)
     return result
+
+
+def _event_payload(event: ChaosEvent) -> dict[str, object]:
+    payload: dict[str, object] = {"type": event.kind, "at_s": event.at_s}
+    if event.region is not None:
+        payload["region"] = event.region
+    if event.regions:
+        payload["regions"] = list(event.regions)
+    if event.kind == "drop":
+        payload["percent"] = event.percent
+    if event.kind == "telemetry_delay":
+        payload["delay_s"] = event.delay_s
+    if event.until_s is not None:
+        payload["until_s"] = event.until_s
+    return payload
 
 
 def _span_s(rows: pd.DataFrame, minutes: float | None) -> float:
@@ -232,11 +285,13 @@ def _play(policy: Policy, scenario: Scenario, day: dt.date, seed: int, rows: pd.
           kills: Sequence[HostKill], transport: TransportFaults | None,
           deployed: dict[str, Any], commands: CommandFaults | None,
           coordinator_kills: Sequence[CoordinatorKill], dsn: str | None,
-          ) -> tuple[list[Tick], int, int]:
+          chaos: ChaosSchedule | None, wall_s: float | None,
+          ) -> tuple[list[Tick], int, int, int, int, ReplayMetrics, bool, float]:
     ctx = multiprocessing.get_context("spawn")
     starts_ns = _starts_ns(rows.index)
     home_ids = [np.flatnonzero(np.arange(scenario.fleet.homes) % scenario.fleet.regions == region)
                 for region in range(scenario.fleet.regions)]
+    region_mw = region_deliverable_mw(scenario, case)
     hosts: list[tuple[Any, Any]] = []
     current: list[tuple[Any, Any] | None] = [None]
 
@@ -246,7 +301,7 @@ def _play(policy: Policy, scenario: Scenario, day: dt.date, seed: int, rows: pd.
             target=run_coordinator,
             args=(
                 child, policy, scenario, rows, case.deliverable_mw, case.home_stale, starts_ns,
-                seed, day, deployed, dsn,
+                seed, day, deployed, dsn, region_mw,
             ),
             name="coordinator",
         )
@@ -273,7 +328,7 @@ def _play(policy: Policy, scenario: Scenario, day: dt.date, seed: int, rows: pd.
             hosts.append((proc, parent))
         return _clock(
             hosts, start_coordinator, span_s, tick_s, speed, kills, transport, commands,
-            coordinator_kills,
+            coordinator_kills, chaos, seed, scenario.fleet.regions, wall_s,
         )
     finally:
         _stop(hosts, current[0])
@@ -282,34 +337,55 @@ def _play(policy: Policy, scenario: Scenario, day: dt.date, seed: int, rows: pd.
 def _clock(hosts: list[tuple[Any, Any]], start_coordinator: Callable[[], tuple[Any, Any]],
            span_s: float, tick_s: float, speed: float | None, kills: Sequence[HostKill],
            faults: TransportFaults | None, command_faults: CommandFaults | None,
-           coordinator_kills: Sequence[CoordinatorKill],
-           ) -> tuple[list[Tick], int, int]:
+           coordinator_kills: Sequence[CoordinatorKill], chaos: ChaosSchedule | None,
+           seed: int, n_regions: int, wall_s: float | None,
+           ) -> tuple[list[Tick], int, int, int, int, ReplayMetrics, bool, float]:
     coord_proc, coord = start_coordinator()
     link = Transport(
         0.0 if faults is None else faults.delay_s,
         drop=() if faults is None else faults.drop,
         partition_regions=frozenset() if faults is None else faults.partition_regions,
+        rng=np.random.default_rng(seed),
     )
     orders = CommandTransport(
         duplicate=False if command_faults is None else command_faults.duplicate,
         reorder=False if command_faults is None else command_faults.reorder,
     )
+    kills = tuple(kills) + _host_kills(chaos)
+    coordinator_kills = tuple(coordinator_kills) + _coordinator_kills(chaos)
     dead: set[int] = set()
     restarted: set[float] = set()
     kept: list[dict[str, Any]] = []
+    kept_doubles = 0
+    kept_floors = 0
+    restarts = 0
+    dead_commands = 0
+    incomplete = False
+    started = time.perf_counter()
     t_s = 0.0
     while t_s < span_s - 1e-9:
+        if wall_s is not None and time.perf_counter() - started >= wall_s:
+            incomplete = True
+            break
         if any(kill.at_s <= t_s and kill.at_s not in restarted for kill in coordinator_kills):
             coord.send(("flush",))
-            kept.extend(_recv(coord, coord_proc, "coordinator")["ticks"])
+            flushed = _recv(coord, coord_proc, "coordinator")
+            kept.extend(flushed["ticks"])
+            kept_doubles += int(flushed["double_discharges"])
+            kept_floors += int(flushed["floor_breaches"])
             _kill_host(coord_proc)
             coord.close()
             for kill in coordinator_kills:
                 if kill.at_s <= t_s:
                     restarted.add(kill.at_s)
             coord_proc, coord = start_coordinator()
+            restarts += 1
         if speed is not None:
             time.sleep(tick_s / speed)
+        link.drop_rate = _drop_percent(chaos, t_s)
+        link.delay_s = _telemetry_delay(faults, chaos, t_s)
+        link.set_partition(_partition_regions(faults, chaos, t_s))
+        outaged = _outaged_regions(chaos, t_s)
         for region, (proc, conn) in enumerate(hosts):
             if region in dead:
                 continue
@@ -317,13 +393,17 @@ def _clock(hosts: list[tuple[Any, Any]], start_coordinator: Callable[[], tuple[A
                 _kill_host(proc)
                 dead.add(region)
                 continue
-            conn.send(("sample", t_s))
+            conn.send(("sample", t_s, region in outaged))
             link.submit(_recv(conn, proc, f"agent host {region}"), t_s)
-        coord.send(("tick", t_s, link.deliver(t_s)))
+        coord.send(("tick", t_s, link.deliver(t_s), sorted(outaged)))
         commands = orders.deliver(_recv(coord, coord_proc, "coordinator"))
         by_agent: dict[int, list[Any]] = {}
         for command in commands:
-            by_agent.setdefault(int(command["agent_id"]), []).append(command)
+            agent = int(command["agent_id"])
+            if agent in dead:
+                dead_commands += 1
+                continue
+            by_agent.setdefault(agent, []).append(command)
         reports = []
         for region, (proc, conn) in enumerate(hosts):
             if region in dead:
@@ -338,10 +418,69 @@ def _clock(hosts: list[tuple[Any, Any]], start_coordinator: Callable[[], tuple[A
     coord.send(None)
     raw = _recv(coord, coord_proc, "coordinator")
     rows = kept + raw["ticks"]
-    return [Tick(
+    doubles = kept_doubles + int(raw["double_discharges"])
+    floors = kept_floors + int(raw["floor_breaches"])
+    ticks = [Tick(
         row["t_s"], dict(row["reported_mw"]), dict(row["deliverable_mw"]),
         dict(row["commanded_mw"]), dict(row["delivered_mw"]),
-    ) for row in rows], int(raw["double_discharges"]), int(raw["floor_breaches"])
+    ) for row in rows]
+    return ticks, doubles, floors, restarts, dead_commands, measure(
+        rows, chaos, n_regions, floor_violations=floors, duplicate_commands=doubles,
+        dead_commands=dead_commands), incomplete, time.perf_counter() - started
+
+
+def _coordinator_kills(chaos: ChaosSchedule | None) -> tuple[CoordinatorKill, ...]:
+    if chaos is None:
+        return ()
+    return tuple(CoordinatorKill(at_s=event.at_s) for event in chaos.of("coordinator_restart"))
+
+
+def _outaged_regions(chaos: ChaosSchedule | None, t_s: float) -> set[int]:
+    if chaos is None:
+        return set()
+    return {
+        event.region
+        for event in chaos.covering("region_outage", t_s)
+        if event.region is not None
+    }
+
+
+def _partition_regions(faults: TransportFaults | None, chaos: ChaosSchedule | None,
+                       t_s: float) -> frozenset[int]:
+    regions = set() if faults is None else set(faults.partition_regions)
+    if chaos is not None:
+        for event in chaos.covering("partition", t_s):
+            regions.update(event.regions)
+    return frozenset(regions)
+
+
+def _telemetry_delay(faults: TransportFaults | None, chaos: ChaosSchedule | None, t_s: float) -> float:
+    base = 0.0 if faults is None else faults.delay_s
+    if chaos is None:
+        return base
+    active = chaos.covering("telemetry_delay", t_s)
+    if not active:
+        return base
+    return max(event.delay_s for event in active)
+
+
+def _host_kills(chaos: ChaosSchedule | None) -> tuple[HostKill, ...]:
+    if chaos is None:
+        return ()
+    return tuple(
+        HostKill(region=event.region, at_s=event.at_s)
+        for event in chaos.of("host_kill")
+        if event.region is not None
+    )
+
+
+def _drop_percent(chaos: ChaosSchedule | None, t_s: float) -> float:
+    if chaos is None:
+        return 0.0
+    active = chaos.covering("drop", t_s)
+    if not active:
+        return 0.0
+    return max(event.percent for event in active)
 
 
 def _kill_host(proc: Any) -> None:

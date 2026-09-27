@@ -8,7 +8,6 @@ the award; hosts discharge that setpoint and report the kW they delivered.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import numpy as np
@@ -39,6 +38,46 @@ def interval_at(starts_ns: np.ndarray, t_s: float) -> int:
     return min(max(index, 0), len(starts_ns) - 1)
 
 
+def region_deliverable_mw(scenario: Scenario, case: FleetCase) -> dict[int, dict[str, np.ndarray]]:
+    """MW of true deliverable each region contributes at each interval.
+
+    This is the same per-home energy the fleet sim counts, split by region,
+    so a grid outage can remove that region without recomputing the day.
+    """
+    fleet = scenario.fleet
+    n = len(next(iter(case.deliverable_mw.values())))
+    energy = np.maximum(case.home_soc - fleet.backup_floor, 0.0) * fleet.battery_kwh
+    shares: dict[int, dict[str, np.ndarray]] = {}
+    for region in range(fleet.regions):
+        homes = np.flatnonzero(case.region_of == region)
+        shares[region] = {}
+        for product, rules in scenario.products.items():
+            kw = np.minimum(fleet.inverter_kw, energy / rules.duration_h)
+            mask = case.sustains[product][:case.home_soc.shape[0], :n]
+            shares[region][product] = kw[homes] @ mask[homes] / 1000.0
+    return shares
+
+
+def _backup_now(row: np.ndarray, home_ids: np.ndarray, in_outage: bool) -> np.ndarray:
+    if not in_outage:
+        return row
+    overridden = np.array(row, copy=True)
+    overridden[home_ids] = True
+    return overridden
+
+
+def _deliverable(deliverable_mw: dict[str, np.ndarray], region_mw: dict[int, dict[str, np.ndarray]],
+                 interval: int, outaged: Any) -> dict[str, float]:
+    total = {product: float(deliverable_mw[product][interval]) for product in PRODUCTS}
+    for region in outaged:
+        share = region_mw.get(int(region))
+        if share is None:
+            continue
+        for product in PRODUCTS:
+            total[product] -= float(share[product][interval])
+    return total
+
+
 def run_host(region: int, conn: Any, home_ids: np.ndarray, soc: np.ndarray,
              online: np.ndarray, backup: np.ndarray, starts_ns: np.ndarray,
              battery_kwh: float, inverter_kw: float, backup_floor: float) -> None:
@@ -48,6 +87,7 @@ def run_host(region: int, conn: Any, home_ids: np.ndarray, soc: np.ndarray,
     delivered_kw = 0.0
     double_discharges = 0
     floor_breaches = 0
+    in_outage = False
     soc = np.array(soc, dtype=float, copy=True)
     try:
         while True:
@@ -55,20 +95,23 @@ def run_host(region: int, conn: Any, home_ids: np.ndarray, soc: np.ndarray,
             if message is None:
                 return
             kind, t_s = message[0], float(message[1])
+            if kind == "sample":
+                in_outage = len(message) > 2 and bool(message[2])
             interval = interval_at(starts_ns, t_s)
+            backup_now = _backup_now(backup[:, interval], home_ids, in_outage)
             if kind == "apply":
                 version, setpoint_kw, extras, accepted = apply_commands(version, setpoint_kw, message[2])
                 double_discharges += extras
                 if accepted:
                     delivered_kw, breaches = discharge(
-                        home_ids, setpoint_kw, soc, online[:, interval], backup[:, interval],
+                        home_ids, setpoint_kw, soc, online[:, interval], backup_now,
                         float(message[3]), battery_kwh=battery_kwh, inverter_kw=inverter_kw,
                         backup_floor=backup_floor,
                     )
                     floor_breaches += breaches
                 else:
                     delivered_kw = 0.0
-            batch = _batch(region, home_ids, soc, online[:, interval], backup[:, interval], t_s)
+            batch = _batch(region, home_ids, soc, online[:, interval], backup_now, t_s)
             batch["delivered_kw"] = delivered_kw
             batch["version"] = version
             batch["double_discharges"] = double_discharges
@@ -81,7 +124,8 @@ def run_host(region: int, conn: Any, home_ids: np.ndarray, soc: np.ndarray,
 def run_coordinator(conn: Any, policy: Any, scenario: Scenario, rows: pd.DataFrame,
                     deliverable_mw: dict[str, np.ndarray], home_stale: np.ndarray,
                     starts_ns: np.ndarray, seed: int, day: Any,
-                    deployed: dict[str, np.ndarray], dsn: str | None = None) -> None:
+                    deployed: dict[str, np.ndarray], dsn: str | None = None,
+                    region_mw: dict[int, dict[str, np.ndarray]] | None = None) -> None:
     """Fresh telemetry in, commands out, one timeline row per tick.
 
     Durable state is loaded before the first tick. Stored leases do not make
@@ -136,8 +180,8 @@ def run_coordinator(conn: Any, policy: Any, scenario: Scenario, rows: pd.DataFra
                 })
                 pending = None
                 continue
-            _, t_s, batches = message
-            t_s = float(t_s)
+            _, t_s, batches = message[0], float(message[1]), message[2]
+            outaged = message[3] if len(message) > 3 else ()
             for batch in batches:
                 for reading in batch["telemetry"]:
                     last[int(reading["home_id"])] = reading
@@ -152,8 +196,9 @@ def run_coordinator(conn: Any, policy: Any, scenario: Scenario, rows: pd.DataFra
             pending = {
                 "t_s": t_s,
                 "reported_mw": reported,
-                "deliverable_mw": {product: float(deliverable_mw[product][interval]) for product in PRODUCTS},
+                "deliverable_mw": _deliverable(deliverable_mw, region_mw or {}, interval, outaged),
                 "commanded_mw": dict(award),
+                "excluded_regions": _excluded_regions(scenario, last, t_s),
             }
             issued = commands_for(targets, versions, last_kw)
             for agent in list(last_kw):
@@ -172,6 +217,19 @@ def run_coordinator(conn: Any, policy: Any, scenario: Scenario, rows: pd.DataFra
         if callable(close):
             close()
         conn.close()
+
+
+def _excluded_regions(scenario: Scenario, last: dict[int, dict[str, Any]], t_s: float) -> list[int]:
+    """Regions with no home still counted in reported capability."""
+    fleet = scenario.fleet
+    counted = [0] * fleet.regions
+    for home, reading in last.items():
+        if t_s - float(reading["t_s"]) > fleet.telemetry_stale_s:
+            continue
+        if bool(reading["backup_mode"]) or not bool(reading["available"]):
+            continue
+        counted[int(home) % fleet.regions] += 1
+    return [region for region, homes in enumerate(counted) if homes == 0]
 
 
 def _targets(scenario: Scenario, award: dict[str, float], batches: list[dict[str, Any]],
@@ -208,24 +266,19 @@ def _targets(scenario: Scenario, award: dict[str, float], batches: list[dict[str
 
 def _batch(region: int, home_ids: np.ndarray, soc: np.ndarray, online: np.ndarray,
            backup: np.ndarray, t_s: float) -> dict[str, Any]:
-    telemetry: list[dict[str, Any]] = []
-
-    async def one(home: int) -> None:
-        telemetry.append({
-            "home_id": home,
-            "soc": float(soc[home]),
-            "backup_mode": bool(backup[home]),
-            "available": bool(online[home]),
-            "t_s": t_s,
-        })
-
-    async def gather() -> None:
-        async with asyncio.TaskGroup() as tasks:
-            for home in home_ids:
-                tasks.create_task(one(int(home)))
-
-    asyncio.run(gather())
-    telemetry.sort(key=lambda reading: int(reading["home_id"]))
+    telemetry = sorted(
+        (
+            {
+                "home_id": int(home),
+                "soc": float(soc[home]),
+                "backup_mode": bool(backup[home]),
+                "available": bool(online[home]),
+                "t_s": t_s,
+            }
+            for home in home_ids
+        ),
+        key=lambda reading: int(reading["home_id"]),
+    )
     return {"region": region, "t_s": t_s, "telemetry": telemetry}
 
 

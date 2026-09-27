@@ -58,7 +58,7 @@ make market-data    # data/market, offline after this
 make backtest       # headline comparison, writes docs/insights/compare/
 make bench          # run-farm benchmark; needs Postgres first (below)
 make replay         # 5 simulated minutes of the demo day
-make chaos          # same replay; the seeded chaos schedule is the stretch
+make chaos          # the same day, with chaos/demo.yaml
 ```
 
 `make bench` creates a throwaway database on the Postgres in [compose.yaml](compose.yaml):
@@ -100,13 +100,15 @@ Killing 6 of 32 workers partway through that sweep took 14.218 seconds to finish
 
 `make replay` plays the demo day, 2026-08-17, the operating day the headline comparison charts (highest settlement prices that week: ECRS $22.90/MW-h, Non-Spin $91.53/MW-h). It runs `harness replay` for 5 simulated minutes at the default 2-second tick and writes `data/replay/timeline.json`. Omit `--minutes` on the command below to play the whole day.
 
-`make chaos` runs that same replay. `harness replay` has no chaos-schedule flag. The Python API can already stop a host, delay or drop heartbeats, partition a region, duplicate commands, and restart the coordinator from Postgres; a seeded schedule of those faults is the live-replay stretch, and it is not a CLI command yet. `make chaos` will point at that schedule when it lands. Until then it replays the demo day.
+`make chaos` plays that same day with [chaos/demo.yaml](chaos/demo.yaml). The schedule is seeded, so the same seed repeats the same failures: two agent-host kills, a 10% message drop, a telemetry delay, a partition, a regional outage that puts those homes in backup, and a coordinator restart. Postgres holds the coordinator's allocations; `make chaos` starts it when it is not already up. The run writes `data/replay/timeline.json` and a timeline chart. Latency and the 10k and 50k tick rates are in [docs/bench/live.md](docs/bench/live.md).
 
 Worker-kill chaos on the run farm is a different command, `harness chaos`, and `make bench` already measures recovery after killing 20% of workers. `make chaos` does not call `harness chaos`.
 
 ```bash
 .venv/bin/harness replay --scenario baseline --policy constant_haircut \
-    --day 2026-08-17 --minutes 5 --out data/replay
+    --day 2026-08-17 --minutes 5 --chaos chaos/demo.yaml \
+    --database postgresql://harness:harness@127.0.0.1:54329/harness \
+    --out data/replay
 ```
 
 ## How Base plugs in

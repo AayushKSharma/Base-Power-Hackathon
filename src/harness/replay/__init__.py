@@ -5,6 +5,7 @@
     result.ticks[0].reported_mw
 """
 
+from harness.replay.chaos import ChaosError, ChaosEvent, ChaosSchedule, load_chaos
 from harness.replay.session import (
     CommandFaults,
     CoordinatorKill,
@@ -18,6 +19,9 @@ from harness.replay.session import (
 )
 
 __all__ = [
+    "ChaosError",
+    "ChaosEvent",
+    "ChaosSchedule",
     "CommandFaults",
     "CoordinatorKill",
     "HostKill",
@@ -25,6 +29,7 @@ __all__ = [
     "ReplayResult",
     "Tick",
     "TransportFaults",
+    "load_chaos",
     "multiprocessing_available",
     "replay",
 ]
