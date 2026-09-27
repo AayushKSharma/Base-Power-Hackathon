@@ -7,16 +7,26 @@
 
 from harness.external import ExternalPolicy
 from harness.policy import ConstantHaircut, Policy, PolicyError
+from harness.reference import (
+    Belief,
+    CorrelatedNewsvendor,
+    IndependentNewsvendor,
+    ReliabilityTarget,
+)
 from harness.rng import RandomStreams
 from harness.runner import RunResult, run
 from harness.scenario import Scenario, ScenarioError, load_scenario, parse_scenario
 from harness.scorecard import Scorecard
 
 __all__ = [
+    "Belief",
     "ConstantHaircut",
+    "CorrelatedNewsvendor",
     "ExternalPolicy",
+    "IndependentNewsvendor",
     "Policy",
     "PolicyError",
+    "ReliabilityTarget",
     "RandomStreams",
     "RunResult",
     "Scenario",

@@ -9,6 +9,7 @@ from typing import Protocol
 
 from harness.observation import Observation
 from harness.products import PRODUCTS
+from harness.reference import Belief, CorrelatedNewsvendor, IndependentNewsvendor, ReliabilityTarget
 from harness.scenario import Scenario
 
 # Reported capability in MW per product, e.g. {"ECRS": 40.0, "NONSPIN": 40.0}.
@@ -42,13 +43,22 @@ class PolicyError(ValueError):
 
 @dataclass(frozen=True)
 class ConstantHaircut:
-    """Report a fixed fraction of the fleet's observed capability for every product."""
+    """Report a fixed fraction of the fleet's observed capability for every product.
+
+    The belief is recorded on the scorecard. The fraction does not use it:
+    a fixed haircut is the baseline that ignores prices and failure rates.
+    """
 
     fraction: float
+    belief: Belief | None = None
 
     @property
     def name(self) -> str:
         return f"constant_haircut(fraction={self.fraction:g})"
+
+    @property
+    def beliefs(self) -> dict[str, float]:
+        return (self.belief if self.belief is not None else Belief()).as_dict()
 
     def decide(self, observation: Observation) -> Capability:
         # Multiply before dividing by 1000, matching examples/constant_haircut_policy.py,
@@ -59,12 +69,30 @@ class ConstantHaircut:
 
 
 def _constant_haircut(params: Mapping[str, str], scenario: Scenario) -> Policy:
-    return ConstantHaircut(fraction=_float_param(params, "fraction", default=0.9))
+    return ConstantHaircut(fraction=_float_param(params, "fraction", default=0.9), belief=_belief(params))
+
+
+def _independent_newsvendor(params: Mapping[str, str], scenario: Scenario) -> Policy:
+    return IndependentNewsvendor(belief=_belief(params))
+
+
+def _reliability_target(params: Mapping[str, str], scenario: Scenario) -> Policy:
+    return ReliabilityTarget(epsilon=_unit_param(params, "epsilon", default=0.05), belief=_belief(params))
+
+
+def _correlated_newsvendor(params: Mapping[str, str], scenario: Scenario) -> Policy:
+    return CorrelatedNewsvendor(samples=_count_param(params, "samples", default=64), belief=_belief(params))
+
+
+_BELIEF_KEYS = tuple(Belief().as_dict())
 
 
 # Built-in policy name -> (accepted parameters, builder).
 BUILTIN: dict[str, tuple[tuple[str, ...], Callable[[Mapping[str, str], Scenario], Policy]]] = {
-    "constant_haircut": (("fraction",), _constant_haircut),
+    "constant_haircut": (("fraction", *_BELIEF_KEYS), _constant_haircut),
+    "independent_newsvendor": (_BELIEF_KEYS, _independent_newsvendor),
+    "reliability_target": (("epsilon", *_BELIEF_KEYS), _reliability_target),
+    "correlated_newsvendor": (("samples", *_BELIEF_KEYS), _correlated_newsvendor),
 }
 
 
@@ -77,6 +105,32 @@ def builtin_policy(name: str, params: Mapping[str, str], scenario: Scenario) -> 
     if unknown:
         raise PolicyError(f"{name}: unknown parameter {unknown[0]!r}; accepted: {', '.join(accepted)}")
     return build(params, scenario)
+
+
+def _belief(params: Mapping[str, str]) -> Belief:
+    """Belief fields present in `params`. The rest stay at baseline calm conditions."""
+    return Belief(**{key: _float_param(params, key, default=0.0) for key in _BELIEF_KEYS if key in params})
+
+
+def _count_param(params: Mapping[str, str], key: str, default: int) -> int:
+    """params[key] as an integer of at least 1, or `default` when not given."""
+    if key not in params:
+        return default
+    try:
+        value = int(params[key])
+    except ValueError:
+        raise PolicyError(f"{key}: expected an integer, got {params[key]!r}") from None
+    if value < 1:
+        raise PolicyError(f"{key}: expected an integer of at least 1, got {params[key]!r}")
+    return value
+
+
+def _unit_param(params: Mapping[str, str], key: str, default: float) -> float:
+    """params[key] as a probability in [0, 1], or `default` when not given."""
+    value = _float_param(params, key, default=default)
+    if value > 1:
+        raise PolicyError(f"{key}: expected a number from 0 to 1, got {params.get(key, value)!r}")
+    return value
 
 
 def _float_param(params: Mapping[str, str], key: str, default: float) -> float:

@@ -116,12 +116,16 @@ class Scorecard:
     policy_view: str
     observed_case: str
     days: tuple[DayResult, ...]
+    # The policy's own belief, when it carries one. Separate from the scenario.
+    beliefs: dict[str, float] | None = None
 
     @staticmethod
     def combine(cards: Iterable[Scorecard]) -> Scorecard:
         """Merge scorecards of the same policy, scenario, seed, fleet case and view over disjoint days."""
         cards = list(cards)
-        labels = {(c.policy, c.scenario, c.seed, c.fleet_case, c.policy_view, c.observed_case) for c in cards}
+        labels = {(c.policy, c.scenario, c.seed, c.fleet_case, c.policy_view, c.observed_case,
+                   None if c.beliefs is None else tuple(sorted(c.beliefs.items())))
+                  for c in cards}
         if len(labels) != 1:
             raise ValueError("can only combine scorecards of one policy, scenario, seed, fleet case and view; "
                              f"got {sorted(labels)}")
@@ -129,7 +133,10 @@ class Scorecard:
         repeated = sorted({a.day for a, b in zip(days, days[1:]) if a.day == b.day})
         if repeated:
             raise ValueError(f"days scored more than once: {', '.join(map(str, repeated))}")
-        return Scorecard(*labels.pop(), days=tuple(days))
+        policy, scenario, seed, fleet_case, policy_view, observed_case, belief_key = labels.pop()
+        beliefs = None if belief_key is None else dict(belief_key)
+        return Scorecard(policy, scenario, seed, fleet_case, policy_view, observed_case,
+                         tuple(days), beliefs)
 
     @property
     def start(self) -> dt.date:
@@ -204,6 +211,7 @@ class Scorecard:
             "fleet_case": self.fleet_case,
             "policy_view": self.policy_view,
             "observed_case": self.observed_case,
+            "beliefs": None if self.beliefs is None else dict(self.beliefs),
             "start": self.start.isoformat(),
             "end": self.end.isoformat(),
             "totals": {p: {**asdict(t), "overstatement_rate": t.overstatement_rate}

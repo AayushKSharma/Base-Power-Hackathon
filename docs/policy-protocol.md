@@ -39,13 +39,15 @@ The harness sends this first, and again after a restart or a new operating day.
 {"name": "constant_haircut(fraction=0.9)", "version": "1", "wants_per_home": false}
 ```
 
+A reference policy may also send `beliefs`, an object of non-negative numbers (deployment probabilities, compliance cost, failure rates, and load-zone capacity shares). The harness records that object on the scorecard. Omitting it records baseline calm conditions. Other extra fields are ignored.
+
 | Field | Rule |
 |---|---|
 | `name` | Non-empty string. This is the scorecard label. |
 | `version` | String. The policy's version. |
 | `wants_per_home` | Boolean. `true` or `false` only, not `0` or `1`. |
 
-Anything else is a malformed hello. The harness counts `malformed` and `fallbacks`, uses the fallback for that decision, kills the process, and continues. The next decision starts a new process. That kill is not a restart: the process did not crash. A command that cannot be started at all still stops the run.
+A missing or ill-typed `name`, `version`, or `wants_per_home`, or a `beliefs` value that is not an object of non-negative numbers, is a malformed hello. The harness counts `malformed` and `fallbacks`, uses the fallback for that decision, kills the process, and continues. The next decision starts a new process. That kill is not a restart: the process did not crash. A command that cannot be started at all still stops the run.
 
 ### observation
 
@@ -54,6 +56,8 @@ One per interval, after the handshake.
 ```json
 {"type": "observation", "observation": { }}
 ```
+
+The observation message may also carry `random`: `scenario`, `seed`, and `day`. A Monte Carlo policy uses those to draw from the harness generator tree for that day. A policy that does not sample ignores the field.
 
 `observation` is the object the harness built, unchanged: `now`, `history`, `forecasts`, `forecaster`, `fleet`, and `products`. It may also carry per-home state. The harness removes that state unless `wants_per_home` is true.
 
