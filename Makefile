@@ -1,6 +1,6 @@
 PY ?= .venv/bin/python
 
-.PHONY: install test typecheck market-data market-report fixtures base-actual base-actual-summary forecast-data forecast-report calibrate-quantiles
+.PHONY: install test typecheck market-data market-report fixtures base-actual base-actual-summary forecast-data forecast-report calibrate-quantiles backtest bench replay chaos
 
 install:
 	python3 -m venv .venv
@@ -48,3 +48,48 @@ calibrate-quantiles:
 	@test -n "$(START)" && test -n "$(END)" || { echo "pass START=YYYY-MM-DD END=YYYY-MM-DD"; exit 1; }
 	$(PY) -m harness.calibration --store-dir $(if $(STORE),$(STORE),data/market) \
 		--start $(START) --end $(END) --out $(if $(OUT),$(OUT),data/calibration/base-actual)
+
+# Headline comparison. Same flags as docs/insights/compare-findings.md.
+# Pass MARKET_DIR= to score against a dataset other than data/market.
+backtest:
+	$(PY) -m harness compare \
+		--policy constant_haircut \
+		--policy independent_newsvendor \
+		--policy correlated_newsvendor \
+		--policy reliability_target \
+		--scenario baseline \
+		--scenario caps_lifted \
+		--scenario nonspin_2h \
+		--start 2026-08-11 \
+		--end 2026-08-17 \
+		--day 2026-08-17 \
+		--seed 7 $(if $(MARKET_DIR),--market-dir $(MARKET_DIR)) \
+		--out docs/insights/compare
+
+# Run-farm throughput and recovery. Needs the Postgres in compose.yaml.
+# Writes docs/bench/bench.md. The recorded table is the one already in that file.
+bench:
+	$(PY) -m harness bench \
+		--sweep docs/bench/sweep.yaml $(if $(MARKET_DIR),--market-dir $(MARKET_DIR)) \
+		--out docs/bench
+
+# Live replay of the demo day: 2026-08-17, the day the headline comparison charts.
+# Five simulated minutes. A whole-day replay omits --minutes.
+replay:
+	$(PY) -m harness replay \
+		--scenario baseline \
+		--policy constant_haircut \
+		--day 2026-08-17 \
+		--minutes 5 $(if $(MARKET_DIR),--market-dir $(MARKET_DIR)) \
+		--out data/replay
+
+# harness replay has no chaos-schedule flag. This is the same demo-day replay.
+# The seeded chaos schedule is the live-replay stretch.
+chaos:
+	@echo "Seeded chaos schedule is the live-replay stretch; replaying the demo day 2026-08-17."
+	$(PY) -m harness replay \
+		--scenario baseline \
+		--policy constant_haircut \
+		--day 2026-08-17 \
+		--minutes 5 $(if $(MARKET_DIR),--market-dir $(MARKET_DIR)) \
+		--out data/replay

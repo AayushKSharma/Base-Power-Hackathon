@@ -4,7 +4,7 @@ One week of real ERCOT prices, 11–17 August 2026, on the placeholder 1,000-hom
 
 Prices are real. The fleet, the failure model, and deployment chances are still the baseline assumptions.
 
-Reproduce it from this worktree:
+`make backtest` runs these flags with this checkout's `.venv` and `data/market` (pass `MARKET_DIR=` to point elsewhere). The command that produced the published files, from the checkout that held the dataset:
 
 ```
 PYTHONPATH=src /Users/yush/Documents/Career/Programming/Base-Power-Hackathon/.venv/bin/python -m harness compare \
