@@ -1,0 +1,2872 @@
+{
+  "day": "2026-08-17",
+  "seed": 7,
+  "tick_s": 2.0,
+  "double_discharges": 0,
+  "floor_breaches": 0,
+  "coordinator_restarts": 0,
+  "dead_commands": 0,
+  "metrics": {
+    "reaction_p50_s": null,
+    "reaction_p99_s": null,
+    "recovery_p50_s": null,
+    "recovery_p99_s": null,
+    "floor_violations": 0,
+    "duplicate_commands": 0,
+    "dead_commands": 0
+  },
+  "events": [],
+  "incomplete": false,
+  "ticks": [
+    {
+      "t_s": 0.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 2.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 4.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 6.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 8.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 10.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 12.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 14.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 16.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 18.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 20.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 22.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 24.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 26.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 28.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 30.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 32.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 34.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 36.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 38.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 40.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 42.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 44.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 46.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 48.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 50.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 52.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 54.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 56.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 58.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 60.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 62.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 64.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 66.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 68.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 70.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 72.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 74.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 76.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 78.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 80.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 82.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 84.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 86.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 88.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 90.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 92.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 94.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 96.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 98.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 100.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 102.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 104.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 106.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 108.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 110.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 112.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 114.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 116.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 118.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 120.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 122.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 124.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 126.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 128.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 130.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 132.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 134.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 136.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 138.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 140.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 142.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 144.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 146.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 148.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 150.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 152.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 154.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 156.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 158.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 160.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 162.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 164.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 166.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 168.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 170.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 172.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 174.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 176.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 178.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 180.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 182.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 184.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 186.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 188.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 190.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 192.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 194.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 196.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 198.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 200.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 202.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 204.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 206.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 208.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 210.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 212.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 214.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 216.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 218.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 220.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 222.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 224.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 226.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 228.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 230.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 232.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 234.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 236.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 238.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 240.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 242.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 244.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 246.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 248.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 250.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 252.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 254.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 256.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 258.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 260.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 262.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 264.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 266.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 268.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 270.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 272.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 274.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 276.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 278.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 280.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 282.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 284.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 286.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 288.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 290.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 292.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 294.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 296.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    },
+    {
+      "t_s": 298.0,
+      "reported_mw": {
+        "ECRS": 12.439027960484061,
+        "NONSPIN": 3.2459060249320184
+      },
+      "deliverable_mw": {
+        "ECRS": 13.821142178315625,
+        "NONSPIN": 3.6065622499244654
+      },
+      "commanded_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      },
+      "delivered_mw": {
+        "ECRS": 0.0,
+        "NONSPIN": 0.0
+      }
+    }
+  ]
+}

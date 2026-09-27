@@ -2,7 +2,7 @@
 
 This is a test harness for capacity policies. It replays a policy on real post-RTC+B ERCOT market data and scores what that policy would have earned and risked, including under fleet and rule changes the desk has not lived through yet. The built-in policies (a fixed haircut, two newsvendors, a reliability target) are reference points so a scorecard can tell policies apart. Base plugs in its own policy. The harness is not a competing policy and does not claim to beat one.
 
-Project plan: [docs/handoff.md](docs/handoff.md). Design tradeoffs: [docs/design-notes.md](docs/design-notes.md).
+Project plan: [docs/handoff.md](docs/handoff.md). Design tradeoffs: [docs/design-notes.md](docs/design-notes.md). Form fields for the hackathon submission: [docs/submission.md](docs/submission.md).
 
 ## Architecture
 
@@ -48,9 +48,18 @@ flowchart TB
 | Run farm | One job per policy × scenario × day × seed, leased from Postgres. `harness submit`, `work`, `aggregate`, `bench`. |
 | Live replay | Coordinator plus one agent host per region, 2-second ticks, `timeline.json`. `harness replay`. |
 
+### Tech stack
+
+| Piece | What it uses |
+|---|---|
+| Scoring, data build, CLI (`harness`) | Python 3.11+, pandas, NumPy, PyArrow, PyYAML, Matplotlib |
+| Run-farm queue and live-replay allocations | Postgres 16, started with `docker compose up -d --wait` ([compose.yaml](compose.yaml)), accessed with psycopg |
+| Market tape | Public ERCOT MIS files. No API key. gridstatus's `ErcotAPI` is only the optional archive route |
+| Policy plug-in | A subprocess speaking JSON lines on stdin and stdout. The template is Python; the protocol is not |
+
 ## Quickstart
 
-From a fresh clone. The interval table builds from public MIS files without an ERCOT API key. Set `ERCOT_API_USERNAME`, `ERCOT_API_PASSWORD`, and `ERCOT_PUBLIC_API_SUBSCRIPTION_KEY` when you have them: that is the archive route for AS demand curves, which the headline comparison does not read. `make market-data` fetches only missing days, from Dec 5, 2025 through yesterday.
+From a fresh clone. The interval table builds from public MIS files without an ERCOT API key. Copy [.env.example](.env.example) to `.env` and fill `ERCOT_API_USERNAME`, `ERCOT_API_PASSWORD`, and `ERCOT_PUBLIC_API_SUBSCRIPTION_KEY` when you have them: that is the archive route for AS demand curves and for forecast history older than the week MIS keeps. The headline comparison does not read either store. `make market-data` fetches only missing days, from Dec 5, 2025 through yesterday. Optional: `HARNESS_DATA_DIR` moves the dataset off `data/`. Postgres credentials are in [compose.yaml](compose.yaml) (`harness` / `harness` on `127.0.0.1:54329`), not in `.env`.
 
 ```bash
 make install        # .venv with the harness and dev tools
@@ -75,6 +84,20 @@ One policy, one scenario, one day:
 ```
 
 Pass `MARKET_DIR=` on the make targets to score a dataset that is not `data/market`. `make test` runs the offline tests from recorded ERCOT fixtures. `make typecheck` runs mypy.
+
+### Reproduce the demo
+
+The shot list and the numbers to say are in [docs/demo.md](docs/demo.md). Nothing below needs an ERCOT API key. The market dataset has to exist locally (`make market-data` once).
+
+Do not re-run `make backtest` or `make bench` if you want to keep the published files. Those targets rewrite `docs/insights/compare/` and `docs/bench/bench.md`.
+
+```bash
+make market-report
+make replay OUT=data/replay/plain
+make chaos  OUT=data/replay/chaos    # starts Postgres if port 54329 is down
+```
+
+`make replay` plays 5 simulated minutes of 2026-08-17 at the default 2-second tick and writes `timeline.json`. `make chaos` plays the same day with [chaos/demo.yaml](chaos/demo.yaml). Use two `OUT=` directories. Both targets default to `data/replay`, and the second call overwrites the first.
 
 ## Headline comparison
 
@@ -143,6 +166,21 @@ Prices the scorecard charges against are measured. The fleet the policy is score
 | Refill rate, shortfall-cost preset, compliance $/MW, Set Point Deviation $/MWh | Assumption | The scenario. See the design notes |
 
 The award is `min(reported MW, cap × cap share)`. That is the price-taker assumption in question 4.3: offers near $0.01, so the policy chooses a quantity and the cap share is the limit. Question 4.3 is open.
+
+### Datasets and synthetic data
+
+Provenance for the market tape, Base's own awards, and the forecast store is [data/README.md](data/README.md). The git checkout does not contain `data/market` or `data/raw`. Both are rebuilt with `make market-data`.
+
+| Data | What it is | Provenance |
+|---|---|---|
+| Interval table | 5-minute prices and AS capability, 2025-12-05 through the last build | Public ERCOT reports NP6-795-ER, NP6-796-ER, NP4-181-ER, NP6-794-ER, NP6-785-ER, plus recent MIS documents. Built 2026-09-26: 295 days, through 2026-09-25. Nothing is filled in. |
+| AS demand curves | Hourly curve points, optional for the headline comparison | Public API archive when the three `ERCOT_API_*` variables are set; otherwise about the last 30 days on MIS |
+| Base-actual | QSE `QBASTX` rows from the 60-day SCED disclosure | NP3-965-ER, public, about a 60-day lag. A grading source, not the baseline fleet |
+| Test fixtures | `tests/fixtures/raw/` | Recorded ERCOT days (normal, spring-forward, spike, a real gap), plus one **synthetic** fall-back day, because no fall-back has occurred since RTC+B |
+| Forecast fixtures | `tests/fixtures/forecast/` | Synthetic vintages in the MIS column layout read on 2026-09-26. The numbers are not a real ERCOT day. Tests only |
+| Fleet, SOC, dropouts, deployment chances | Scenario YAML | Assumptions. Marked PLACEHOLDER in the table below. Not a dataset |
+
+`harness value` grades a persistence forecast and an oracle against realized prices. The oracle is a ceiling. It is not an input the policy is allowed to use.
 
 ## Scenario assumptions
 
@@ -283,3 +321,16 @@ docker compose up -d --wait
 ```
 
 `harness value` scores one policy with a forecaster, the persistence forecast, and an oracle that sees the realized prices. `make forecast-data` builds the point-in-time forecast-input store.
+
+## Known limitations and next steps
+
+- The dollar charge for under-delivery is still an assumption. Shortfall MW-h, over-sold MW-h, and the exceedance curve do not use it. Net dollars do, through one of three presets (`energy`, `energy_spd`, `imbalance`) plus a $500/MW compliance placeholder. Confirming that charge is question 3.1 in [docs/questions.md](docs/questions.md).
+- The published fleet is a 1,000-home placeholder, not Base's fleet. SOC, dropout rates, and deployment chances are marked PLACEHOLDER in the scenario table. Deployments are drawn. Public data does not flag an ECRS or Non-Spin deployment after RTC+B.
+- The scarcity flag is a 99th percentile over the stored tape, and it looks ahead. It is a ground-truth label for the harness, not something the policy should see. Extending the dataset can move which intervals count as scarce.
+- On 11–17 August 2026, every reference policy has 0.000 MW-h of shortfall on the P50 fleet it planned for. The bench separates them on revenue given up, and it shows under-serving only on the thinner P10 fleet. A larger fleet, `storm_houston`, or a looser haircut is how that line leaves zero.
+- `baseline`, `caps_lifted`, and `nonspin_2h` do not share random draws, because the scenario name is part of the key. A ranking that moves can be the knob or a different set of failures. The published week says which.
+- Base's own ADER awards (`base_actual`) lag about 60 days and do not cover 11–17 August 2026. The headline comparison does not score them. Quantile shares calibrated from those rows are not what `scenarios/baseline.yaml` loads.
+- The recorded farm benchmark is a four-job sweep. Eight and 32 workers are not faster than one on that sweep. The saved table is that machine's wall times.
+- There is no hosted app. The demo is `make replay`, `make chaos`, and the charts already in the repo.
+
+Next: replace the placeholder fleet and failure rates with Base telemetry, pin a deployment signal that does not look ahead, and point `--policy` at the desk's process. `storm_houston`, `fleet_10x`, and `ecrs_2h` are already scenario files. They are not in the published comparison. Open questions stay in [docs/questions.md](docs/questions.md).

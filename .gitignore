@@ -14,6 +14,7 @@ data/runs/
 .zshrc
 .env
 .env.*
+!.env.example
 
 # Forecast-input store: raw vintages and the normalized store are rebuilt locally
 data/forecast-raw/
