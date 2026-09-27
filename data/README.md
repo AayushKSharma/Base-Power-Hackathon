@@ -243,6 +243,32 @@ All quantities are MW.
 - `data/market/base_actual/<day>.parquet`
 - Rebuilds are idempotent, and only days missing from the raw cache are downloaded.
 
+### Calibrated quantile mocks
+
+A named mock set scenarios can select, scaled to any fleet size by `fleet.homes`. It keeps `scenarios/baseline.yaml`'s placeholder shares for comparison.
+
+```bash
+make calibrate-quantiles START=2026-07-01 END=2026-07-28
+# optional: STORE=data/market  OUT=data/calibration/base-actual
+```
+
+```bash
+python -m harness.calibration --store-dir data/market --start 2026-07-01 --end 2026-07-28 --out data/calibration/base-actual
+```
+
+The command reads the ingested store only. It does not download. Every operating day from `--start` through `--end` must already be in the store.
+
+For each SCED run it sums flexible MW (RPC − LPC) across Base's ALRs (QSE `QBASTX`) and divides by the sum of headroom (MPC − LPC) on that same run. That share is flexible MW per MW of the fleet that reported. A run with no positive headroom is left out and counted in `skipped_runs`. Linear quantiles of the remaining shares, by CPT month and hour, are P10, P25, P50, P75 and P90. A quantile outside [0, 1] is clamped into that range afterwards, so an out-of-range run still moves the quantiles below it; `clipped_runs` counts those runs. A month and hour with no runs falls back to that hour's runs in other months, flagged `hour`. An hour that never occurs falls back to every run in the range, flagged `all`. The output is:
+
+| File | What it is |
+|---|---|
+| `shares.csv` | Columns `month,hour,P10,P25,P50,P75,P90`. One row per month 1–12 and hour 0–23. Values in [0, 1], monotone. This is the share file `fleet.quantile_mock.shares` already loads. |
+| `provenance.json` | `start`, `end`, `qse`, `resources`, `clipped_runs`, `skipped_runs`, and `fallback_buckets` (`month`, `hour`, `fallback`). |
+| `bands.svg` | P10–P90 and P25–P75 bands, and the P50 line, at each hour of day that has runs. Hours with no runs are left blank. |
+| `scenario.yaml` | The baseline fleet, failures and products, with `shares: shares.csv`. `harness run --scenario data/calibration/base-actual/scenario.yaml` scores against it. Edit `fleet.homes` to scale the profile. |
+
+The output directory is git-ignored.
+
 ### Open questions
 
 These need an answer, from Base or ERCOT, before relying on the numbers:
