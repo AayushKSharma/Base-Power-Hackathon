@@ -117,7 +117,7 @@ Do not run `make backtest`, `make bench`, or `make chaos` on camera. The week an
 
 ## Script
 
-Read the times as a ceiling. If you are late, drop the farm sentence, not the close.
+Read the times as a ceiling. Sections 3 and 4 define each market word once, in the order you say it. If the clock is past 4:00, skip the Postgres sentence and go to the close.
 
 ### 1. Team — 0:00 to 0:25, camera
 
@@ -125,42 +125,56 @@ I'm Aayush. I built the capacity-policy test harness for this hackathon: the ERC
 
 ### 2. Elevator pitch — 0:25 to 0:50, camera, then glance at the terminal
 
-Base already reports how many megawatts of ECRS and Non-Spin its batteries can hold. There is no solid bench for a change to that number, and under-serving a deployment is a reliability problem, not just a dollar problem. This replays any policy on the real ERCOT tape since RTC+B and prints the chance of being short by at least X megawatts against the revenue that policy gave up. I'm going to run one real day.
+Base already reports how many megawatts of ECRS and Non-Spin its batteries can hold, and it does real time reporting under the ADER program to ERCOT of how much capacity they can serve for Auxillary Services in the day ahead + real-time markets. From talking with Engs on Saturday, there seemed to be some improvements we could make on simulating the algorithms that decide how much capacity to report on real historical ERCOT data. If we can more reliably forecast the past, we can avoid depriving the grid of electrcity in the future; under-serving has tangible human consequences so we cannot mess these algorithms up. My project replays any algorithm on the real ERCOT tape since RTC+B and prints the chance of being short by at least X megawatts against the revenue that policy gave up. So now I'm going to run one real day.
 
 ### 3 and 4. Live demo, and how it is built — 0:50 to 4:15
 
-Press Enter. Stay on the console. The first paragraph fits the 11 seconds the command takes. Point at rows after they appear.
+Press Enter. Stay on the console. Say the first paragraph while the command runs. Point at the table after the rows appear.
 
 **[SAY, over the run]**
 
-One command. A 90 percent haircut, 17 August 2026. Python, scored offline against ERCOT's public real-time prices, from December 2025 through this month. The fleet is not in that data. It is a scenario file: 1,000 homes, Base Core 20 kilowatts and 39.2 kilowatt-hours, 20 percent reserved for the member. A typo is an error, not a default. At a typical 60 percent charge that home can hold about 16 kilowatts for an hour of ECRS and about 4 for four hours of Non-Spin.
+This command tests one algorithm on one real day, 17 August 2026. The algorithm is a haircut. A haircut reports 90 percent of the capacity it can see. It does not use the price. The program is Python. The prices come from ERCOT, the operator of the Texas grid.
 
-**[SAY, table on screen. Point at the header, P10, then P50.]**
+**[SAY, table on screen. Point at the header, then the P50 row, then the P10 row.]**
 
-The policy saw the P50 fleet once, and that decision is scored against every quantile. It never sees the true deliverable. Floor violations are zero: the member reserve is clamped. On P10 the same report is over-sold all day, shortfall is a few tenths of a megawatt-hour, and net dollars go negative. That negative is a placeholder charge, not an invoice. We do not know what an ADER pays for a short deployment, so three formulas sit in the scenario, and only the dollars move when you switch them. From P25 up, shortfall is zero and the revenue given up grows. Planned for the median, short on a thin fleet, leaving money on a thick one.
+ERCOT pays batteries to hold capacity in reserve. These are two reserve products. ECRS must be ready within minutes, and the battery must be able to hold that power for 1 hour. Non-Spin is the slower product. The battery must hold that power for 4 hours. At a typical 60 percent charge, one Base battery can offer about 16 kilowatts of ECRS, but only about 4 kilowatts of Non-Spin. The energy in the battery sets that limit.
 
-Deployments are drawn, 2 percent calm and 30 percent in a scarce interval. Scarce means the price beat that product's 99th percentile in the stored tape, which looks ahead, and is labeled as an assumption.
+The algorithm reports a capacity, K. Deliverable capacity, D, is the power the homes can really hold for that many hours. The algorithm does not see D. The test compares K with D after the decision.
+
+The fleet in this test is not Base's measured fleet. It is a setup file: 1000 homes, each with a 20 kilowatt inverter and a 39.2 kilowatt-hour battery. The setup keeps 20 percent of each battery for the home. A wrong field in the file is an error. The file does not fall back to a hidden default.
+
+P50 and P10 are two possible fleets for the same day. P50 is the middle fleet. Half of the availability outcomes are smaller than P50, and half are larger. The algorithm sees only P50. P10 is a thin fleet. Only 10 percent of outcomes have fewer homes available. We take the same report and score it on P10, P25, P50, P75, and P90. The algorithm cannot look at the thin fleet and change its report.
+
+On P10, K is higher than D for the full day. The shortfall is a few tenths of a megawatt-hour. A shortfall is capacity you promised and could not deliver when ERCOT calls. The net dollar line is negative. That dollar line is a placeholder, not an invoice. We do not know the real penalty for a short delivery. From P25 up, the shortfall is zero. "Given up" is the payment you did not collect because you reported less than D. That column grows as the fleet gets larger.
+
+A deployment is ERCOT calling on the reserve. The public data does not mark every call. The setup draws a call with probability 2 percent in a normal interval, and 30 percent when the price is in the top 1 percent of the stored history. That top 1 percent uses the full history, so it looks ahead. The score labels that look-ahead as an assumption. Shortfall counts only when a call is drawn.
 
 **[SCREEN]** `frontier.png`, then `rankings.png`.
 
-A week of four policies takes minutes, so this is the same scorecard already run for 11 to 17 August. Each reference policy has its own belief. The scorecard grades the scenario. On the fleet they saw, weekly shortfall is zero, so the frontier is flat and a tighter reliability target only gives up revenue. The cap lifting to 500 megawatts does not reorder anyone. Non-Spin cut from four hours to two does: the correlated newsvendor passes the haircut, and that revenue roughly doubles because the same energy covers more megawatts. Policies on one scenario share the seed, so that gap is the policy.
+A full week of four algorithms takes minutes. This chart is that same test, already run, for 11 to 17 August. Each algorithm carries its own assumptions. The test scores the setup, not those assumptions.
+
+The haircut is the fixed 90 percent rule you just ran. The independent newsvendor assumes each home fails alone. It reports more capacity when the reserve price is high, and less when a call is likely. The correlated newsvendor assumes a whole region can fail together. It draws 64 possible futures from a fixed random seed and keeps the capacity with the best expected result. The reliability target reports the largest K whose chance of a shortfall stays under a limit, for example 1 percent or 5 percent.
+
+On the P50 fleet that every algorithm saw, the week's shortfall is zero. The chart is a flat line. A stricter limit only gives up payment. It does not buy more reliability on this fleet. A pilot cap is the maximum megawatts one company may sell. Raising that cap from 100 megawatts to 500 does not change the order. This test fleet is too small to fill 100 megawatts. Cutting Non-Spin from 4 hours to 2 hours does change the order. The correlated newsvendor then beats the haircut. The same energy can support more megawatts, so Non-Spin payment about doubles. Algorithms on one setup share the random draws. The difference between them is the algorithm.
 
 **[SCREEN]** `data/replay/chaos/timeline.png`.
 
-Same morning, two-second clock, one host per region. That run is 90 seconds, so this is its chart, and the console line was reaction 180 seconds, recovery 0, floor violations 0. Hosts killed at 2 seconds stay in the report until telemetry is 180 seconds old. An outage at 100 seconds drops both lines immediately. Recovery is zero only because nothing was deployed. The restart at 200 seconds reloads the coordinator from Postgres and the lines do not move.
+This is the same morning on a 2-second clock. One coordinator splits the reported capacity across regions. One process per region stands in for the homes. This run takes 90 seconds, so the chart is from the run already done. The log said: reaction 180 seconds, recovery 0, backup-floor violations 0.
 
-The same day-run is a job on a Postgres queue, claimed with `SKIP LOCKED` and written once, so a killed worker cannot double-count. Postgres, not Temporal, because this has to run on a laptop. A Base policy is a process: JSON in, megawatts out. A crash counts as a fault and the day still finishes.
+At 2 seconds the test kills two region processes. The report does not drop. At 100 seconds one region loses grid power. Homes on backup power cannot export, so both lines drop together. At 182 seconds only the reported line drops. Telemetry older than 180 seconds counts as stale, so the dead processes leave the report. The homes behind those processes can still deliver, so D does not drop. Recovery is 0 because ERCOT did not call, and commanded power stayed at 0. At 200 seconds the coordinator restarts from Postgres. The lines do not move.
+
+The same day is also a job in a Postgres queue. A worker takes one job, writes the score once, and a killed worker cannot write that day again. Postgres is the queue because the test must run on a laptop. A Base algorithm can be a separate program. The program reads one JSON line and writes capacity. If the program crashes, the test records the fault and continues the day.
 
 ### 5. So what — 4:15 to 4:45, camera or the chart
 
-This is for the people who change the number Base reports to ERCOT. The week shows a fixed haircut leaving money on the table while a looser policy is the one that is short on a thinner fleet, and it shows that ranking move when Non-Spin's duration changes. Next is their binary on `--policy`, their telemetry in place of the placeholder fleet, and the real shortfall charge in place of the three presets. The physical map does not have to be rebuilt to take any of those.
+This test is for the people who choose the capacity Base reports to ERCOT. On a thin fleet, the 90 percent haircut is short. On the middle fleet, it leaves payment uncollected. When Non-Spin changes from 4 hours to 2 hours, a different algorithm ranks higher. Next, Base can point the same command at its own program, replace the 1000-home setup with its own telemetry, and replace the placeholder penalty with the real charge. The megawatt-hour score does not need to change for any of those.
 
 ## If they ask
 
-**Is the dollar number true?** No. Physical shortfall, over-sold MW-h, the exceedance curve, and revenue given up against the real reserve price do not use the unknown shortfall charge. The three presets are the three answers still open in question 3.1.
+**Is the dollar number true?** No. The shortfall in megawatt-hours does not use the unknown penalty. The negative dollars use a placeholder. Three placeholder formulas are in the setup file. Only the dollar columns change when you switch formulas.
 
-**Does the policy see the future?** No. Forecast inputs, when a store is attached, are vintages posted at or before the decision. The scarcity percentile used to label an interval is the one look-ahead in the market tape, and the report calls it an assumption.
+**Does the algorithm see the future?** No. When a price forecast is attached, the algorithm can use only forecasts posted at or before the decision. The one look-ahead is the "top 1 percent" label for a scarce interval. That label uses the full stored history. The score calls that label an assumption.
 
-**Why is the frontier flat?** On this placeholder fleet, every reference policy was conservative enough that the P50 fleet covered the award whenever a deployment was drawn. The bench still separates them on revenue given up, and it shows under-serving on the quantile they did not plan for. A larger fleet, a storm file, or a looser haircut is how you move the line off zero.
+**Why is the revenue chart a flat line at zero shortfall?** On the P50 fleet, every algorithm reported less than D whenever a call was drawn. The algorithms still differ by the payment they give up. P10 is where the haircut is short. A larger fleet, or a haircut above 90 percent, is how you move that line off zero.
 
-**Can you run our binary?** A process that answers the hello and one observation per interval. Same timeout and fallback as the Python template.
+**Can you run our program?** Yes. The program reads one description of the current interval and writes ECRS and Non-Spin capacity. If the program is late or crashes, the test uses the last good report and records the fault.
