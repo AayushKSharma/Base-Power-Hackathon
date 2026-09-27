@@ -3,16 +3,30 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import sys
+import time
+import uuid
 from pathlib import Path
 
+import psycopg
 import pytest
+from psycopg import sql
 
-from conftest import CALM, SPRING_FORWARD, fleet_scenario, recorded
+from conftest import CALM, NO_FAILURES, SPRING_FORWARD, fleet_scenario, recorded
 from harness.cli import main
 from harness.external import ExternalPolicy
+from harness.farm import DEFAULT_DSN
 from harness.policy import ConstantHaircut
-from harness.replay import HostKill, TransportFaults, multiprocessing_available, replay
+from harness.replay import (
+    CommandFaults,
+    CoordinatorKill,
+    HostKill,
+    TransportFaults,
+    multiprocessing_available,
+    replay,
+)
 
 # fleet_scenario: 20 kWh, 10 kW inverter, 20% floor, SOC 0.6.
 # Each home has 8 kWh above the floor, so 8 kW of ECRS and 2 kW of Non-Spin.
@@ -126,6 +140,64 @@ def test_the_same_seed_gives_the_same_timeline(market_store):
     assert first.ticks != once(2).ticks
 
 
+COMPOSE = Path(__file__).resolve().parents[1] / "compose.yaml"
+
+
+def docker_ready() -> bool:
+    if shutil.which("docker") is None:
+        return False
+    try:
+        completed = subprocess.run(["docker", "info"], capture_output=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return completed.returncode == 0
+
+
+def require_docker() -> None:
+    if not docker_ready():
+        pytest.skip("Docker is not available")
+
+
+@pytest.fixture(scope="module")
+def postgres_server():
+    """The compose Postgres, reused when another checkout already owns the port."""
+    require_docker()
+    try:
+        with psycopg.connect(DEFAULT_DSN) as conn:
+            conn.execute("SELECT 1")
+    except psycopg.OperationalError:
+        subprocess.run(
+            ["docker", "compose", "-f", str(COMPOSE), "up", "-d", "--wait"],
+            check=True,
+        )
+    deadline = time.monotonic() + 30
+    last: BaseException | None = None
+    while time.monotonic() < deadline:
+        try:
+            with psycopg.connect(DEFAULT_DSN) as conn:
+                conn.execute("SELECT 1")
+            break
+        except psycopg.OperationalError as exc:
+            last = exc
+            time.sleep(0.5)
+    else:
+        raise RuntimeError(f"Postgres did not accept connections: {last}")
+    yield DEFAULT_DSN
+
+
+@pytest.fixture
+def replay_dsn(postgres_server):
+    name = "replay_" + uuid.uuid4().hex
+    with psycopg.connect(postgres_server, autocommit=True) as conn:
+        conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+    try:
+        yield postgres_server.rsplit("/", 1)[0] + "/" + name
+    finally:
+        with psycopg.connect(postgres_server, autocommit=True) as conn:
+            conn.execute(
+                sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(name)))
+
+
 def require_multiprocessing() -> None:
     if not multiprocessing_available():
         pytest.skip("multiprocessing is not available")
@@ -161,6 +233,146 @@ def test_harness_replay_writes_a_timeline(market_store, tmp_path):
     assert written["ticks"][0]["deliverable_mw"] == pytest.approx({"ECRS": 0.016, "NONSPIN": 0.004})
 
 
+def test_delivered_mw_tracks_commanded_mw_during_a_forced_deployment(market_store):
+    """Four homes, haircut 0.5, ECRS forced on from midnight.
+
+    Each home has 8 kW of ECRS, so the fleet has 0.032 MW and the policy reports
+    0.016 MW. That award is the commanded MW for the whole minute, and the
+    agents deliver it.
+    """
+    result = replay(
+        ConstantHaircut(0.5),
+        fleet_scenario(homes=4, regions=2, deployments=_FORCED_ECRS),
+        SPRING_FORWARD,
+        seed=7,
+        minutes=1,
+        market=recorded(market_store),
+    )
+
+    assert len(result.ticks) == 30
+    for tick in result.ticks:
+        assert tick.commanded_mw == pytest.approx({"ECRS": 0.016, "NONSPIN": 0.0})
+        assert tick.delivered_mw["ECRS"] == pytest.approx(0.016, abs=1e-6)
+        assert tick.delivered_mw["NONSPIN"] == pytest.approx(0.0)
+
+
+def test_duplicated_and_reordered_commands_do_not_double_discharge(market_store):
+    """Each command is delivered twice, and the previous tick's commands arrive after.
+
+    The fleet still discharges the 0.016 MW award once. The double-discharge
+    counter stays at zero.
+    """
+    result = replay(
+        ConstantHaircut(0.5),
+        fleet_scenario(homes=4, regions=2, deployments=_FORCED_ECRS),
+        SPRING_FORWARD,
+        seed=7,
+        minutes=1,
+        market=recorded(market_store),
+        commands=CommandFaults(duplicate=True, reorder=True),
+    )
+
+    assert result.double_discharges == 0
+    for tick in result.ticks:
+        assert tick.delivered_mw["ECRS"] == pytest.approx(0.016, abs=1e-6)
+        assert tick.commanded_mw["ECRS"] == pytest.approx(0.016)
+
+
+def test_the_backup_floor_holds_throughout_a_forced_deployment(market_store):
+    """The discharge clamp never asks a home for more energy than it has above the floor."""
+    result = replay(
+        ConstantHaircut(0.5),
+        fleet_scenario(homes=4, regions=2, deployments=_FORCED_ECRS),
+        SPRING_FORWARD,
+        seed=7,
+        minutes=1,
+        market=recorded(market_store),
+    )
+
+    assert result.floor_breaches == 0
+
+
+def test_backup_homes_are_not_allocated_during_a_forced_deployment(market_store):
+    """Region 0 is in backup, so its homes add nothing.
+
+    The other region's two homes have 16 kW of ECRS. The policy reports half
+    of that, 0.008 MW, and that region delivers it.
+    """
+    outage = {**NO_FAILURES, "forced_region_outages": [
+        {"region": 0, "start": "2026-03-08 00:00", "minutes": 60},
+    ]}
+    result = replay(
+        ConstantHaircut(0.5),
+        fleet_scenario(state="stochastic", failures=outage, homes=4, regions=2, deployments=_FORCED_ECRS),
+        SPRING_FORWARD,
+        seed=7,
+        minutes=1,
+        market=recorded(market_store),
+    )
+
+    assert result.floor_breaches == 0
+    for tick in result.ticks:
+        assert tick.commanded_mw["ECRS"] == pytest.approx(0.008)
+        assert tick.delivered_mw["ECRS"] == pytest.approx(0.008, abs=1e-6)
+
+
+def test_killing_an_agent_host_mid_deployment_reassigns_its_share(market_store):
+    """Region 0 is killed at 2 s, after both hosts have taken half of the award.
+
+    Each region has 16 kW of ECRS, and the award is 0.016 MW, so the surviving
+    host can carry all of it. Delivered MW is back on that target.
+    """
+    result = replay(
+        ConstantHaircut(0.5),
+        fleet_scenario(homes=4, regions=2, deployments=_FORCED_ECRS),
+        SPRING_FORWARD,
+        seed=7,
+        minutes=1,
+        market=recorded(market_store),
+        kills=(HostKill(region=0, at_s=2.0),),
+    )
+
+    by_time = {tick.t_s: tick for tick in result.ticks}
+    assert by_time[0.0].delivered_mw["ECRS"] == pytest.approx(0.016, abs=1e-6)
+    for t_s in (2.0, 4.0, 58.0):
+        tick = by_time[t_s]
+        assert tick.commanded_mw["ECRS"] == pytest.approx(0.016)
+        assert tick.delivered_mw["ECRS"] == pytest.approx(0.016, abs=1e-6)
+
+
+@pytest.mark.postgres
+def test_a_coordinator_restart_resumes_the_deployment_without_double_commanding(market_store, replay_dsn):
+    """The coordinator is killed at 2 s and a new process continues the same award.
+
+    Versions live in Postgres, so the new commands are newer than the ones
+    already applied, and the fleet discharges the 0.016 MW award once.
+    """
+    result = replay(
+        ConstantHaircut(0.5),
+        fleet_scenario(homes=4, regions=2, deployments=_FORCED_ECRS),
+        SPRING_FORWARD,
+        seed=7,
+        minutes=1,
+        market=recorded(market_store),
+        coordinator_kills=(CoordinatorKill(at_s=2.0),),
+        dsn=replay_dsn,
+    )
+
+    assert result.double_discharges == 0
+    by_time = {tick.t_s: tick for tick in result.ticks}
+    assert by_time[0.0].delivered_mw["ECRS"] == pytest.approx(0.016, abs=1e-6)
+    for t_s in (2.0, 4.0, 58.0):
+        tick = by_time[t_s]
+        assert tick.commanded_mw["ECRS"] == pytest.approx(0.016)
+        assert tick.delivered_mw["ECRS"] == pytest.approx(0.016, abs=1e-6)
+
+
+def test_postgres_replay_skips_when_docker_is_unavailable(monkeypatch):
+    monkeypatch.setattr(f"{__name__}.docker_ready", lambda: False)
+    with pytest.raises(pytest.skip.Exception):
+        require_docker()
+
+
 def test_an_external_policy_speaks_the_same_protocol(market_store):
     scenario = fleet_scenario(homes=2, regions=2)
     command = [sys.executable, str(EXAMPLE), "--fraction", "1"]
@@ -176,6 +388,12 @@ def test_an_external_policy_speaks_the_same_protocol(market_store):
 
     assert result.ticks[0].reported_mw == pytest.approx({"ECRS": 0.016, "NONSPIN": 0.004})
 
+
+# ECRS is called for the first five minutes and nothing else is.
+_FORCED_ECRS = {
+    "calm": 0.0, "scarce": 0.0, "refill_kw": 0.0,
+    "forced": [{"product": "ECRS", "start": "2026-03-08 00:00", "minutes": 5}],
+}
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "constant_haircut_policy.py"
 
