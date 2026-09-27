@@ -7,6 +7,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
+import pandas as pd
+
+from harness.base_actual import BASE_QSE, load_base_actual
 from harness.observation import Observation
 from harness.products import PRODUCTS
 from harness.reference import Belief, CorrelatedNewsvendor, IndependentNewsvendor, ReliabilityTarget
@@ -87,12 +90,49 @@ def _correlated_newsvendor(params: Mapping[str, str], scenario: Scenario) -> Pol
 _BELIEF_KEYS = tuple(Belief().as_dict())
 
 
+@dataclass(frozen=True)
+class BaseActual:
+    """Replay Base's historical ADER AS awards as the reported capability K.
+
+    One entry per 5-minute interval: ECRS MW, then Non-Spin MW, summed across
+    Base's aggregate load resources. An interval with no award row reports 0.
+    """
+
+    awards: Mapping[pd.Timestamp, tuple[float, float]]
+
+    @property
+    def name(self) -> str:
+        return "base_actual"
+
+    def decide(self, observation: Observation) -> Capability:
+        when = pd.Timestamp(observation["now"]["interval_start_utc"]).tz_convert("UTC")
+        ecrs, nspin = self.awards.get(when, (0.0, 0.0))
+        return {"ECRS": ecrs, "NONSPIN": nspin}
+
+
+def base_actual_policy(start, end, *, store_dir=None) -> BaseActual:
+    """Base's awards over [start, end]. Raises MarketDataMissing if a day is absent."""
+    rows = load_base_actual(start, end, qse=BASE_QSE, store_dir=store_dir)
+    last = rows.sort_values("sced_time_utc").groupby(["interval_start_utc", "resource"], sort=False).tail(1)
+    summed = last.groupby("interval_start_utc")[["as_award_ecrs_mw", "as_award_nspin_mw"]].sum()
+    awards = {
+        pd.Timestamp(ts).tz_convert("UTC"): (float(ecrs), float(nspin))
+        for ts, ecrs, nspin in summed.itertuples(index=True, name=None)
+    }
+    return BaseActual(awards)
+
+
+def _base_actual(params: Mapping[str, str], scenario: Scenario) -> Policy:
+    raise PolicyError("base_actual is built from the Base-actual dataset for the run's date range")
+
+
 # Built-in policy name -> (accepted parameters, builder).
 BUILTIN: dict[str, tuple[tuple[str, ...], Callable[[Mapping[str, str], Scenario], Policy]]] = {
     "constant_haircut": (("fraction", *_BELIEF_KEYS), _constant_haircut),
     "independent_newsvendor": (_BELIEF_KEYS, _independent_newsvendor),
     "reliability_target": (("epsilon", *_BELIEF_KEYS), _reliability_target),
     "correlated_newsvendor": (("samples", *_BELIEF_KEYS), _correlated_newsvendor),
+    "base_actual": ((), _base_actual),
 }
 
 

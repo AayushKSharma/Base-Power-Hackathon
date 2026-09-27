@@ -557,11 +557,18 @@ class _HeldPolicy:
         return self._inner.name
 
     @property
+    def beliefs(self) -> dict[str, float]:
+        return self._inner.beliefs
+
+    @property
     def faults(self) -> FaultCounts:
         return self._inner.faults
 
     def begin_day(self) -> None:
         self._inner.begin_day(restart=False)
+
+    def arm(self, streams: Any, day: Any) -> None:
+        self._inner.arm(streams, day)
 
     def decide(self, observation: Observation) -> Capability:
         return self._inner.decide(observation)
@@ -613,7 +620,9 @@ def _scorecard(data: Mapping[str, Any]) -> Scorecard:
         )
         for raw in data["days"]
     )
+    beliefs = data.get("beliefs")
     return Scorecard(
         data["policy"], data["scenario"], data["seed"], data["fleet_case"],
         data["policy_view"], data["observed_case"], days,
+        None if beliefs is None else {str(key): float(value) for key, value in beliefs.items()},
     )

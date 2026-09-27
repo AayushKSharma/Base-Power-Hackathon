@@ -34,7 +34,7 @@ def render_report(result: RunResult, scenario: Scenario) -> str:
         lines += _case_summary(card)
         for product in PRODUCTS:
             lines += ["", f"### {product} exceedance, {card.fleet_case}", ""]
-            lines += _chart(card, product, scenario.scoring.exceedance_mw, fleet_mw)
+            lines += exceedance_chart(card, product, scenario.scoring.exceedance_mw, fleet_mw)
             lines += ["", f"### {product} tolerance, {card.fleet_case}", ""]
             lines += _tolerance(card, product, scenario.scoring.tolerance_mw)
         lines.append("")
@@ -58,7 +58,7 @@ def _case_summary(card: Scorecard) -> list[str]:
     return lines
 
 
-def _chart(card: Scorecard, product: str, grid: tuple[float, ...], fleet_mw: float) -> list[str]:
+def exceedance_chart(card: Scorecard, product: str, grid: tuple[float, ...], fleet_mw: float) -> list[str]:
     """A text bar chart of P(hourly shortfall >= x)."""
     lines = ["```", "MW (share of fleet)      P(hour >= x)"]
     for point in card.exceedance(product, grid, fleet_mw):
