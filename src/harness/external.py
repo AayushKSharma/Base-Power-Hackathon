@@ -1,20 +1,24 @@
-"""Run a capacity policy in another process, over the JSON-lines protocol.
+"""Run a capacity policy or price forecaster in another process.
 
 The child is untrusted. A reply that misses the time budget is a timeout: the
 process is killed, so a late line cannot be read as the next decision, and the
-harness reports the fallback capability instead. Killing it is not a restart.
-A new process is started on the next decision.
+harness reports the fallback instead. Killing it is not a restart. A new
+process is started on the next decision.
+
+Policies and forecasters share this session. Only the message they answer, and
+the value used as a fallback, differ.
 """
 
 from __future__ import annotations
 
+import copy
 import math
 import os
 import select
 import subprocess
 import threading
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import IO, Any
 
 from harness.observation import Observation
@@ -29,12 +33,12 @@ from harness.scorecard import FaultCounts
 FALLBACKS = ("last_good", "zero")
 
 
-class ExternalPolicy:
-    """A policy whose `decide` is one request to a child process.
+class JsonChild:
+    """One hello, then one JSON line in and one out, with the policy time budget.
 
-    Started on the first decision of an operating day. `run` closes it when
-    the range finishes; `begin_day` replaces the process without counting a
-    restart. The context manager does the same close.
+    `request` returns the parsed reply, or the fallback. Faults accumulate on
+    `faults`; `begin_day` drops the child and the remembered reply without
+    counting a restart.
     """
 
     def __init__(self, command: Sequence[str], products: Mapping[str, ProductRules], *,
@@ -51,7 +55,9 @@ class ExternalPolicy:
         self._fallback_mode = fallback
         self._name = " ".join(self.command)
         self._wants_per_home = False
-        self._last_good: dict[str, float] | None = None
+        self.look_ahead = False
+        self._hello: dict[str, Any] | None = None
+        self._last_good: Any = None
         self._faults = FaultCounts()
         self._proc: subprocess.Popen[bytes] | None = None
         self._reader: _LineReader | None = None
@@ -65,37 +71,35 @@ class ExternalPolicy:
 
     @property
     def faults(self) -> FaultCounts:
-        """Cumulative counts. The runner subtracts a day's opening value."""
+        """Cumulative counts. The caller subtracts a day's opening value."""
         return self._faults
 
     def begin_day(self) -> None:
-        """Drop the child and the remembered decision. This is not a restart.
-
-        Each operating day is simulated on its own, so a range run keeps matching
-        the combination of its single-day runs.
-        """
+        """Drop the child and the remembered reply. This is not a restart."""
         self._stop()
         self._last_good = None
 
-    def decide(self, observation: Observation) -> Capability:
+    def request(self, message_for: Callable[[bool], Mapping[str, Any]],
+                parse: Callable[[Any], Any], zero: Callable[[], Any]) -> Any:
+        """Send one message and return the parsed reply, or the fallback."""
         if not self._ready and not self._handshake():
-            return self._fallback()
+            return self._fallback(zero)
         try:
-            self._write(observation_message(for_policy(observation, wants_per_home=self._wants_per_home)))
+            self._write(message_for(self._wants_per_home))
             message = self._read()
         except PolicyError:
             self._crashed()
-            return self._fallback()
+            return self._fallback(zero)
         if message is None:
             self._timed_out()
-            return self._fallback()
-        capability = parse_capability(message)
-        if capability is None:
-            # The line was consumed, so the next observation stays in step.
+            return self._fallback(zero)
+        parsed = parse(message)
+        if parsed is None:
+            # The line was consumed, so the next request stays in step.
             self._add(malformed=1, fallbacks=1)
-            return self._fallback()
-        self._last_good = capability
-        return capability
+            return self._fallback(zero)
+        self._last_good = copy.deepcopy(parsed)
+        return parsed
 
     def close(self) -> None:
         proc, self._proc = self._proc, None
@@ -111,12 +115,6 @@ class ExternalPolicy:
             proc.kill()
             proc.wait()
         self._join_stderr()
-
-    def __enter__(self) -> ExternalPolicy:
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        self.close()
 
     def _handshake(self) -> bool:
         self._spawn()
@@ -135,20 +133,23 @@ class ExternalPolicy:
             self._stop()
             return False
         self._name, _, self._wants_per_home = parsed
+        self._hello = message
+        look_ahead = message.get("look_ahead", False)
+        self.look_ahead = look_ahead if isinstance(look_ahead, bool) else False
         self._ready = True
         return True
 
-    def _fallback(self) -> dict[str, float]:
+    def _fallback(self, zero: Callable[[], Any]) -> Any:
         if self._fallback_mode == "last_good" and self._last_good is not None:
-            return dict(self._last_good)
-        return {product: 0.0 for product in PRODUCTS}
+            return copy.deepcopy(self._last_good)
+        return zero()
 
     def _timed_out(self) -> None:
         self._add(timeouts=1, fallbacks=1)
         self._stop()
 
     def _crashed(self) -> None:
-        """The child died on this decision. Count a restart and forget the process."""
+        """The child died on this request. Count a restart and forget the process."""
         self._add(restarts=1, fallbacks=1)
         self._stop()
 
@@ -221,15 +222,64 @@ class ExternalPolicy:
         return decode(line)
 
 
-def _collect_stderr(stream: IO[bytes], policy: ExternalPolicy) -> None:
-    """Drain stderr so a chatty policy cannot fill the pipe, and keep the tail."""
+class ExternalPolicy:
+    """A policy whose `decide` is one request to a child process.
+
+    Started on the first decision of an operating day. `run` closes it when
+    the range finishes; `begin_day` replaces the process without counting a
+    restart. The context manager does the same close.
+    """
+
+    def __init__(self, command: Sequence[str], products: Mapping[str, ProductRules], *,
+                 timeout_s: float = 1.0, fallback: str = "last_good"):
+        self._child = JsonChild(command, products, timeout_s=timeout_s, fallback=fallback)
+
+    @property
+    def command(self) -> list[str]:
+        return self._child.command
+
+    @property
+    def name(self) -> str:
+        return self._child.name
+
+    @property
+    def faults(self) -> FaultCounts:
+        return self._child.faults
+
+    def begin_day(self) -> None:
+        """Drop the child and the remembered decision. This is not a restart.
+
+        Each operating day is simulated on its own, so a range run keeps matching
+        the combination of its single-day runs.
+        """
+        self._child.begin_day()
+
+    def decide(self, observation: Observation) -> Capability:
+        return self._child.request(
+            lambda wants: observation_message(for_policy(observation, wants_per_home=wants)),
+            parse_capability,
+            lambda: {product: 0.0 for product in PRODUCTS},
+        )
+
+    def close(self) -> None:
+        self._child.close()
+
+    def __enter__(self) -> ExternalPolicy:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+
+def _collect_stderr(stream: IO[bytes], child: JsonChild) -> None:
+    """Drain stderr so a chatty process cannot fill the pipe, and keep the tail."""
     tail = b""
     while True:
         block = stream.read(4096)
         if not block:
             break
         tail = (tail + block)[-8000:]
-    policy._stderr = tail
+    child._stderr = tail
 
 
 class _LineReader:

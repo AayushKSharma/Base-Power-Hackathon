@@ -75,6 +75,33 @@ The policy answers each observation with:
 
 Both products are required. Extra fields are ignored. A number above the fleet's nominal capability is allowed: overstatement is what the scorecard measures.
 
+### forecast
+
+A price forecaster speaks the same hello, then answers a forecast request instead of an observation. The harness may also send `look_ahead` on the hello reply; only `true` marks a look-ahead forecaster, and anything else counts as false.
+
+```json
+{"type": "forecast", "horizon_hours": 24, "quantiles": [0.1, 0.5, 0.9], "observation": {}}
+```
+
+`observation` is the point-in-time view: realized rows in `history` start strictly before the decision, and `forecasts` is the forecast store's `as_of` at that time. The reply:
+
+```json
+{
+  "issued_at": "2026-03-08T06:00:00+00:00",
+  "horizon_hours": 24,
+  "series": {
+    "LZ_HOUSTON": {"quantiles": [0.1, 0.5, 0.9], "values": [[], [], []]},
+    "LZ_NORTH": {"quantiles": [0.1, 0.5, 0.9], "values": [[], [], []]},
+    "LZ_SOUTH": {"quantiles": [0.1, 0.5, 0.9], "values": [[], [], []]},
+    "LZ_WEST": {"quantiles": [0.1, 0.5, 0.9], "values": [[], [], []]},
+    "MCPC_ECRS": {"quantiles": [0.1, 0.5, 0.9], "values": [[], [], []]},
+    "MCPC_NSPIN": {"quantiles": [0.1, 0.5, 0.9], "values": [[], [], []]}
+  }
+}
+```
+
+The six series are required. `values[i]` is the trajectory of `quantiles[i]`, one finite number per hour, starting at `issued_at`. The first hour may instead be twelve 5-minute steps: each trajectory then has `12 + horizon_hours - 1` numbers, the first twelve covering that hour and the rest hourly. A missing series, a non-finite number, or the wrong length is malformed. The timeout, fallback and restart rules below apply unchanged. [`examples/persistence_forecaster.py`](../examples/persistence_forecaster.py) is the template.
+
 ## Malformed decisions
 
 A decision is malformed when any of these is true:
