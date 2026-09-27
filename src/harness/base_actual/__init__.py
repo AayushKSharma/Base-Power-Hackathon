@@ -11,6 +11,7 @@ from harness.base_actual.analysis import (
     daily_summary,
     dispatch_down,
     dispatch_down_events,
+    grade_delivery,
 )
 from harness.base_actual.dataset import BaseActualBuild, build_base_actual, load_base_actual
 from harness.base_actual.source import BASE_QSE
@@ -23,5 +24,6 @@ __all__ = [
     "daily_summary",
     "dispatch_down",
     "dispatch_down_events",
+    "grade_delivery",
     "load_base_actual",
 ]

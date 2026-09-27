@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pandas as pd
 
 from harness.market.catalog import CPT
+from harness.scenario import SPD_TOLERANCE_FRACTION, SPD_TOLERANCE_MW
 
 # Telemetry noise on Base's ALRs is well under 1 MW (mean |RPC - Base Point| was
 # 0.01-0.55 MW on 2026-07-20); the one real dispatch that day moved it 6-25 MW.
@@ -74,3 +77,53 @@ def daily_summary(rows: pd.DataFrame, threshold_mw: float = DEFAULT_DISPATCH_THR
     counts = events.assign(operating_day=event_days).groupby(["operating_day", "resource"]).size()
     out["dispatch_down_events"] = counts.reindex(out.index, fill_value=0).astype(int)
     return out[SUMMARY_COLUMNS]
+
+
+def grade_delivery(
+    rows: pd.DataFrame,
+    threshold_mw: float = DEFAULT_DISPATCH_THRESHOLD_MW,
+    *,
+    tolerance_mw: float = SPD_TOLERANCE_MW,
+    tolerance_fraction: float = SPD_TOLERANCE_FRACTION,
+) -> dict:
+    """How closely Real Power Consumption followed Base Point on dispatch-down events.
+
+    For each event, requested MW is the mean Base Point and delivered MW is the
+    mean real power consumption. The shortfall is the worst run's consumption
+    above that Base Point. An event is within tolerance when the shortfall is
+    within the lesser of `tolerance_fraction` of requested MW and `tolerance_mw`,
+    the same Set Point Deviation band the simulated shortfall cost uses.
+    """
+    events: list[dict[str, object]] = []
+    within = 0
+    worst = 0.0
+    for event in dispatch_down_events(rows, threshold_mw).itertuples(index=False):
+        start = cast(pd.Timestamp, event.start_cpt)
+        end = cast(pd.Timestamp, event.end_cpt)
+        span = rows["resource"].eq(event.resource) & rows["sced_time_cpt"].between(start, end)
+        runs = rows.loc[span]
+        requested = float(runs["base_point_mw"].mean())
+        delivered = float(runs["real_power_consumption_mw"].mean())
+        shortfall = float(runs["deviation_mw"].max())
+        followed = shortfall <= min(tolerance_fraction * requested, tolerance_mw)
+        within += int(followed)
+        worst = max(worst, shortfall)
+        events.append({
+            "resource": event.resource,
+            "start_cpt": start.isoformat(),
+            "end_cpt": end.isoformat(),
+            "requested_mw": requested,
+            "delivered_mw": delivered,
+            "shortfall_mw": shortfall,
+            "within_tolerance": followed,
+        })
+    n = len(events)
+    return {
+        "events": events,
+        "summary": {
+            "events": n,
+            "within_tolerance": within,
+            "share_within_tolerance": within / n if n else 0.0,
+            "worst_shortfall_mw": worst,
+        },
+    }
