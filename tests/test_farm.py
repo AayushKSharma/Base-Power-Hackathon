@@ -18,7 +18,7 @@ from psycopg import sql
 from conftest import AFTER_SPRING_FORWARD, SPRING_FORWARD, recorded
 from harness.cli import main
 from harness.external import ExternalPolicy
-from harness.farm import DEFAULT_DSN, Clock, Farm, PolicySpec, Sweep
+from harness.farm import DEFAULT_DSN, ChaosReport, Clock, Farm, IncompleteSweep, PolicySpec, Sweep
 from harness.policy import builtin_policy
 from harness.runner import run
 from harness.scenario import load_scenario
@@ -43,12 +43,20 @@ def require_docker() -> None:
 
 @pytest.fixture(scope="session")
 def postgres_server():
-    """The compose Postgres, started if Docker is up. Tests skip when it is not."""
+    """The compose Postgres, reused when it is already accepting connections.
+
+    A different checkout may already own the port. Connecting proves the harness
+    database is there. Compose is started only when nothing is listening.
+    """
     require_docker()
-    subprocess.run(
-        ["docker", "compose", "-f", str(COMPOSE), "up", "-d", "--wait"],
-        check=True,
-    )
+    try:
+        with psycopg.connect(DEFAULT_DSN) as conn:
+            conn.execute("SELECT 1")
+    except psycopg.OperationalError:
+        subprocess.run(
+            ["docker", "compose", "-f", str(COMPOSE), "up", "-d", "--wait"],
+            check=True,
+        )
     deadline = time.monotonic() + 30
     last: BaseException | None = None
     while time.monotonic() < deadline:
@@ -325,3 +333,146 @@ def test_cli_submit_work_aggregate_and_status(farm_dsn, tmp_path, market_store, 
     written = list(out.glob("*.json"))
     assert len(written) == 1
     assert "constant_haircut(fraction=0.8)" in written[0].read_text()
+
+
+@pytest.mark.postgres
+def test_chaos_command_kills_workers_and_keeps_the_scorecard(farm_dsn, tmp_path, market_store, capsys):
+    scenario = _write_scenario(tmp_path, "narrow_cap", 100.0)
+    sweep = tmp_path / "sweep.yaml"
+    sweep.write_text(
+        "policies:\n"
+        "  - builtin: constant_haircut\n"
+        "    param: {fraction: '0.8'}\n"
+        "scenarios:\n"
+        f"  - {scenario.name}\n"
+        "start: 2026-03-08\n"
+        "end: 2026-03-08\n"
+        "seeds: [1]\n"
+    )
+    assert main([
+        "chaos", "--sweep", str(sweep), "--seed", "11", "--workers", "2",
+        "--lease-seconds", "0.4", "--market-dir", str(market_store),
+        "--database", farm_dsn,
+    ]) == 0
+
+    printed = capsys.readouterr().out
+    assert "mid-job" in printed
+    assert "before commit" in printed
+
+    farm = Farm(farm_dsn, market_dir=market_store)
+    loaded = load_scenario(scenario)
+    policy = builtin_policy("constant_haircut", {"fraction": "0.8"}, loaded)
+    expected = run(policy, loaded, START, START, 1, market=recorded(market_store)).scorecards
+    assert farm.aggregate()[(policy.name, loaded.name, 1)] == expected
+
+
+@pytest.mark.postgres
+def test_a_raising_job_fails_after_max_attempts_and_the_rest_completes(
+    farm_dsn, tmp_path, market_store,
+):
+    clock = ManualClock()
+    farm = Farm(
+        farm_dsn, market_dir=market_store, clock=clock,
+        max_attempts=3, backoff=dt.timedelta(seconds=10),
+    )
+    good = _write_scenario(tmp_path, "wide_cap", 100.0)
+    poison = _write_scenario(tmp_path, "narrow_cap", 0.5)
+    spec = PolicySpec(builtin="constant_haircut", params={"fraction": "0.9"})
+    assert farm.submit(Sweep((spec,), (good, poison), START, START, (1,))) == 2
+    poison.write_text("this: is: not: a scenario:\n  - [\n")
+
+    assert farm.work("worker-a") == 1
+    waiting = farm.status()
+    assert (waiting.done, waiting.failed, waiting.queued, waiting.leased) == (1, 0, 1, 0)
+
+    clock.advance(9)
+    assert farm.work("worker-a") == 0
+    assert farm.status().failed == 0
+
+    clock.advance(1)
+    assert farm.work("worker-a") == 0
+    assert farm.status().queued == 1
+
+    clock.advance(19)
+    assert farm.work("worker-a") == 0
+    assert farm.status().failed == 0
+
+    clock.advance(1)
+    assert farm.work("worker-a") == 0
+    report = farm.status()
+    assert (report.done, report.failed, report.queued, report.leased) == (1, 1, 0, 0)
+    assert len(report.errors) == 1
+    assert "not valid YAML" in report.errors[0]
+
+
+@pytest.mark.postgres
+def test_resubmitting_a_sweep_adds_only_changed_scenarios(farm_dsn, tmp_path, market_store):
+    farm = Farm(farm_dsn, market_dir=market_store)
+    scenario = _write_scenario(tmp_path, "narrow_cap", 0.5)
+    spec = PolicySpec(builtin="constant_haircut", params={"fraction": "0.8"})
+    sweep = Sweep((spec,), (scenario,), START, END, (1, 3))
+    assert farm.submit(sweep) == 4
+
+    assert farm.submit(sweep) == 0
+    assert farm.status().queued == 4
+
+    _write_scenario(tmp_path, "narrow_cap", 100.0)
+    assert farm.submit(sweep) == 4
+    assert farm.status().queued == 8
+
+
+def _assert_matches_sequential(farm: Farm, spec: PolicySpec, scenario_path: Path, market_store: Path) -> None:
+    got = farm.aggregate()
+    scenario = load_scenario(scenario_path)
+    assert spec.builtin is not None
+    policy = builtin_policy(spec.builtin, spec.params, scenario)
+    for seed in (1, 3):
+        expected = run(policy, scenario, START, END, seed, market=recorded(market_store)).scorecards
+        assert got[(policy.name, scenario.name, seed)] == expected
+
+
+@pytest.mark.postgres
+def test_workers_killed_mid_job_match_sequential_runs(farm_dsn, tmp_path, market_store):
+    farm = Farm(farm_dsn, market_dir=market_store, lease=dt.timedelta(milliseconds=400))
+    scenario = _write_scenario(tmp_path, "narrow_cap", 100.0)
+    spec = PolicySpec(builtin="constant_haircut", params={"fraction": "0.8"})
+    assert farm.submit(Sweep((spec,), (scenario,), START, END, (1, 3))) == 4
+
+    report = farm.chaos(workers=3, seed=11, kill="mid")
+
+    assert isinstance(report, ChaosReport)
+    assert report.killed_mid_job >= 1
+    assert report.killed_before_commit == 0
+    assert report.committed == 4
+    _assert_matches_sequential(farm, spec, scenario, market_store)
+    assert farm.status().failed == 0
+
+
+@pytest.mark.postgres
+def test_workers_killed_before_commit_match_sequential_runs(farm_dsn, tmp_path, market_store):
+    farm = Farm(farm_dsn, market_dir=market_store, lease=dt.timedelta(milliseconds=400))
+    scenario = _write_scenario(tmp_path, "narrow_cap", 100.0)
+    spec = PolicySpec(builtin="constant_haircut", params={"fraction": "0.8"})
+    assert farm.submit(Sweep((spec,), (scenario,), START, START, (1,))) == 1
+
+    report = farm.chaos(workers=2, seed=11, kill="both")
+
+    assert report.killed_mid_job >= 1
+    assert report.killed_before_commit >= 1
+    assert report.committed == 1
+    got = farm.aggregate()
+    loaded = load_scenario(scenario)
+    assert spec.builtin is not None
+    policy = builtin_policy(spec.builtin, spec.params, loaded)
+    expected = run(policy, loaded, START, START, 1, market=recorded(market_store)).scorecards
+    assert got[(policy.name, loaded.name, 1)] == expected
+    assert farm.status().failed == 0
+
+
+@pytest.mark.postgres
+def test_aggregate_refuses_an_incomplete_sweep(farm_dsn, tmp_path, market_store):
+    farm = Farm(farm_dsn, market_dir=market_store)
+    _one_day(farm, tmp_path)
+
+    with pytest.raises(IncompleteSweep, match="incomplete"):
+        farm.aggregate()
