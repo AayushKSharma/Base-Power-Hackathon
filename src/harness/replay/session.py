@@ -2,7 +2,9 @@
 
 The caller drives the clock. Each tick, one agent-host process per region
 sends a heartbeat batch, and the coordinator process records reported
-capability against the fleet's true deliverable MW.
+capability against the fleet's true deliverable MW. When the day's
+deployments call for power, the coordinator commands a share of that award
+and records the MW the hosts actually discharge.
 """
 
 from __future__ import annotations
@@ -24,9 +26,10 @@ from harness.market import load_intervals
 from harness.market.catalog import scarce_column
 from harness.policy import Policy
 from harness.products import PRODUCTS
-from harness.replay.transport import Transport
+from harness.replay.transport import CommandTransport, Transport
 from harness.replay.workers import run_coordinator, run_host
 from harness.rng import RandomStreams
+from harness.runner import _deployments
 from harness.scenario import QUANTILE, Scenario
 
 # The market-dataset loader contract: operating days [start, end] -> interval table.
@@ -38,6 +41,28 @@ _REPLY_S = 30.0
 
 class ReplayError(ValueError):
     """The replay could not be run."""
+
+
+@dataclass(frozen=True)
+class CommandFaults:
+    """Deliver each command twice, and deliver the previous tick's commands after.
+
+    Agents that apply only a newer version discharge the setpoint once.
+    """
+
+    duplicate: bool = False
+    reorder: bool = False
+
+
+@dataclass(frozen=True)
+class CoordinatorKill:
+    """Stop the coordinator at simulated time `at_s` and start a new one.
+
+    The new process rebuilds from Postgres and hears an agent only after that
+    agent heartbeats to it.
+    """
+
+    at_s: float
 
 
 @dataclass(frozen=True)
@@ -69,11 +94,17 @@ class TransportFaults:
 
 @dataclass(frozen=True)
 class Tick:
-    """One simulated tick: what the policy reported, and what the fleet could deliver."""
+    """One simulated tick: reported capability, true deliverable, and the deployment.
+
+    `commanded_mw` is the award being asked for while a product is deployed.
+    `delivered_mw` is what the agent hosts discharged on that tick.
+    """
 
     t_s: float
     reported_mw: dict[str, float]
     deliverable_mw: dict[str, float]
+    commanded_mw: dict[str, float]
+    delivered_mw: dict[str, float]
 
 
 @dataclass(frozen=True)
@@ -82,6 +113,8 @@ class ReplayResult:
     seed: int
     tick_s: float
     ticks: tuple[Tick, ...]
+    double_discharges: int = 0
+    floor_breaches: int = 0
 
     def write(self, path: Path) -> None:
         """Write the timeline next to anything else the caller asked for."""
@@ -90,8 +123,16 @@ class ReplayResult:
             "day": self.day.isoformat(),
             "seed": self.seed,
             "tick_s": self.tick_s,
+            "double_discharges": self.double_discharges,
+            "floor_breaches": self.floor_breaches,
             "ticks": [
-                {"t_s": tick.t_s, "reported_mw": tick.reported_mw, "deliverable_mw": tick.deliverable_mw}
+                {
+                    "t_s": tick.t_s,
+                    "reported_mw": tick.reported_mw,
+                    "deliverable_mw": tick.deliverable_mw,
+                    "commanded_mw": tick.commanded_mw,
+                    "delivered_mw": tick.delivered_mw,
+                }
                 for tick in self.ticks
             ],
         }
@@ -120,6 +161,9 @@ def replay(
     out: Path | None = None,
     kills: Sequence[HostKill] = (),
     transport: TransportFaults | None = None,
+    commands: CommandFaults | None = None,
+    coordinator_kills: Sequence[CoordinatorKill] = (),
+    dsn: str | None = None,
 ) -> ReplayResult:
     """Replay `day` and return the timeline of reported capability versus true deliverable MW.
 
@@ -127,7 +171,9 @@ def replay(
     whole operating day. `speed` is simulated seconds per wall-clock second.
     The default spends no time waiting, so the clock runs as fast as the
     processes allow. `kills` stops agent-host processes. `transport` injects
-    drop, delay, and partition. `out`, when given, is the timeline file.
+    drop, delay, and partition on heartbeats. `commands` duplicates or reorders
+    the allocation commands. `coordinator_kills` restarts the coordinator from
+    `dsn`. `out`, when given, is the timeline file.
     """
     if not multiprocessing_available():
         raise ReplayError("multiprocessing is not available")
@@ -142,10 +188,14 @@ def replay(
     if len(rows) == 0:
         raise ReplayError(f"no market intervals on {day}")
     span_s = _span_s(rows, minutes)
+    streams = RandomStreams(scenario.name, seed)
     case = _policy_case(scenario, simulate_day(
-        scenario, day, pd.DatetimeIndex(rows.index), _stressed(rows), RandomStreams(scenario.name, seed)))
-    result = ReplayResult(day, seed, tick_s, tuple(_play(
-        policy, scenario, day, seed, rows, case, span_s, tick_s, speed, kills, transport)))
+        scenario, day, pd.DatetimeIndex(rows.index), _stressed(rows), streams))
+    deployed = _deployments(scenario, day, rows, streams)
+    ticks, double_discharges, floor_breaches = _play(
+        policy, scenario, day, seed, rows, case, span_s, tick_s, speed, kills, transport,
+        deployed, commands, coordinator_kills, dsn)
+    result = ReplayResult(day, seed, tick_s, tuple(ticks), double_discharges, floor_breaches)
     if out is not None:
         result.write(out)
     return result
@@ -179,50 +229,85 @@ def _stressed(rows: pd.DataFrame) -> np.ndarray:
 
 def _play(policy: Policy, scenario: Scenario, day: dt.date, seed: int, rows: pd.DataFrame,
           case: Any, span_s: float, tick_s: float, speed: float | None,
-          kills: Sequence[HostKill], transport: TransportFaults | None) -> list[Tick]:
+          kills: Sequence[HostKill], transport: TransportFaults | None,
+          deployed: dict[str, Any], commands: CommandFaults | None,
+          coordinator_kills: Sequence[CoordinatorKill], dsn: str | None,
+          ) -> tuple[list[Tick], int, int]:
     ctx = multiprocessing.get_context("spawn")
     starts_ns = _starts_ns(rows.index)
     home_ids = [np.flatnonzero(np.arange(scenario.fleet.homes) % scenario.fleet.regions == region)
                 for region in range(scenario.fleet.regions)]
     hosts: list[tuple[Any, Any]] = []
-    coordinator: tuple[Any, Any] | None = None
+    current: list[tuple[Any, Any] | None] = [None]
+
+    def start_coordinator() -> tuple[Any, Any]:
+        parent, child = ctx.Pipe(duplex=True)
+        proc = ctx.Process(
+            target=run_coordinator,
+            args=(
+                child, policy, scenario, rows, case.deliverable_mw, case.home_stale, starts_ns,
+                seed, day, deployed, dsn,
+            ),
+            name="coordinator",
+        )
+        proc.start()
+        child.close()
+        started = (proc, parent)
+        current[0] = started
+        return started
+
     try:
         for region, ids in enumerate(home_ids):
             parent, child = ctx.Pipe(duplex=True)
+            fleet = scenario.fleet
             proc = ctx.Process(
                 target=run_host,
-                args=(region, child, ids, case.home_soc, case.home_online, case.home_backup, starts_ns),
+                args=(
+                    region, child, ids, case.home_soc, case.home_online, case.home_backup, starts_ns,
+                    fleet.battery_kwh, fleet.inverter_kw, fleet.backup_floor,
+                ),
                 name=f"agent-host-{region}",
             )
             proc.start()
             child.close()
             hosts.append((proc, parent))
-        parent, child = ctx.Pipe(duplex=True)
-        proc = ctx.Process(
-            target=run_coordinator,
-            args=(child, policy, scenario, rows, case.deliverable_mw, case.home_stale, starts_ns, seed, day),
-            name="coordinator",
+        return _clock(
+            hosts, start_coordinator, span_s, tick_s, speed, kills, transport, commands,
+            coordinator_kills,
         )
-        proc.start()
-        child.close()
-        coordinator = (proc, parent)
-        return _clock(hosts, coordinator, span_s, tick_s, speed, kills, transport)
     finally:
-        _stop(hosts, coordinator)
+        _stop(hosts, current[0])
 
 
-def _clock(hosts: list[tuple[Any, Any]], coordinator: tuple[Any, Any], span_s: float,
-           tick_s: float, speed: float | None, kills: Sequence[HostKill],
-           faults: TransportFaults | None) -> list[Tick]:
-    coord_proc, coord = coordinator
+def _clock(hosts: list[tuple[Any, Any]], start_coordinator: Callable[[], tuple[Any, Any]],
+           span_s: float, tick_s: float, speed: float | None, kills: Sequence[HostKill],
+           faults: TransportFaults | None, command_faults: CommandFaults | None,
+           coordinator_kills: Sequence[CoordinatorKill],
+           ) -> tuple[list[Tick], int, int]:
+    coord_proc, coord = start_coordinator()
     link = Transport(
         0.0 if faults is None else faults.delay_s,
         drop=() if faults is None else faults.drop,
         partition_regions=frozenset() if faults is None else faults.partition_regions,
     )
+    orders = CommandTransport(
+        duplicate=False if command_faults is None else command_faults.duplicate,
+        reorder=False if command_faults is None else command_faults.reorder,
+    )
     dead: set[int] = set()
+    restarted: set[float] = set()
+    kept: list[dict[str, Any]] = []
     t_s = 0.0
     while t_s < span_s - 1e-9:
+        if any(kill.at_s <= t_s and kill.at_s not in restarted for kill in coordinator_kills):
+            coord.send(("flush",))
+            kept.extend(_recv(coord, coord_proc, "coordinator")["ticks"])
+            _kill_host(coord_proc)
+            coord.close()
+            for kill in coordinator_kills:
+                if kill.at_s <= t_s:
+                    restarted.add(kill.at_s)
+            coord_proc, coord = start_coordinator()
         if speed is not None:
             time.sleep(tick_s / speed)
         for region, (proc, conn) in enumerate(hosts):
@@ -232,16 +317,31 @@ def _clock(hosts: list[tuple[Any, Any]], coordinator: tuple[Any, Any], span_s: f
                 _kill_host(proc)
                 dead.add(region)
                 continue
-            conn.send(t_s)
+            conn.send(("sample", t_s))
             link.submit(_recv(conn, proc, f"agent host {region}"), t_s)
-        coord.send((t_s, link.deliver(t_s)))
+        coord.send(("tick", t_s, link.deliver(t_s)))
+        commands = orders.deliver(_recv(coord, coord_proc, "coordinator"))
+        by_agent: dict[int, list[Any]] = {}
+        for command in commands:
+            by_agent.setdefault(int(command["agent_id"]), []).append(command)
+        reports = []
+        for region, (proc, conn) in enumerate(hosts):
+            if region in dead:
+                continue
+            conn.send(("apply", t_s, by_agent.get(region, []), tick_s))
+            reports.append(_recv(conn, proc, f"agent host {region}"))
+        coord.send(("applied", reports))
         t_s += tick_s
     for region, (proc, conn) in enumerate(hosts):
         if region not in dead:
             conn.send(None)
     coord.send(None)
     raw = _recv(coord, coord_proc, "coordinator")
-    return [Tick(row["t_s"], dict(row["reported_mw"]), dict(row["deliverable_mw"])) for row in raw]
+    rows = kept + raw["ticks"]
+    return [Tick(
+        row["t_s"], dict(row["reported_mw"]), dict(row["deliverable_mw"]),
+        dict(row["commanded_mw"]), dict(row["delivered_mw"]),
+    ) for row in rows], int(raw["double_discharges"]), int(raw["floor_breaches"])
 
 
 def _kill_host(proc: Any) -> None:

@@ -6,6 +6,8 @@
 """
 
 from harness.replay.session import (
+    CommandFaults,
+    CoordinatorKill,
     HostKill,
     ReplayError,
     ReplayResult,
@@ -16,6 +18,8 @@ from harness.replay.session import (
 )
 
 __all__ = [
+    "CommandFaults",
+    "CoordinatorKill",
     "HostKill",
     "ReplayError",
     "ReplayResult",

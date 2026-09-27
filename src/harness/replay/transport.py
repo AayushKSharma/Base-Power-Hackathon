@@ -32,3 +32,26 @@ class Transport:
         ready = [batch for at, batch in self._held if at <= t_s + 1e-9]
         self._held = [(at, batch) for at, batch in self._held if at > t_s + 1e-9]
         return ready
+
+
+class CommandTransport:
+    """Duplicate or reorder commands on the way to the agent hosts.
+
+    Reorder delivers this tick's commands first, then the previous tick's, so
+    an older version arrives after a newer one.
+    """
+
+    def __init__(self, *, duplicate: bool = False, reorder: bool = False) -> None:
+        self.duplicate = duplicate
+        self.reorder = reorder
+        self._previous: list[dict[str, Any]] = []
+
+    def deliver(self, commands: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        burst = list(commands)
+        if self.duplicate:
+            burst = burst + list(commands)
+        if not self.reorder:
+            return burst
+        out = list(reversed(burst)) + self._previous
+        self._previous = burst
+        return out
