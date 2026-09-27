@@ -315,6 +315,13 @@ def _count_pmf(observation: Mapping[str, Any], product: str, survive: float, reg
     if not pieces:
         return np.array([1.0]), 0.0
     step = _common_step([mw for _, mw in pieces])
+    # Heterogeneous per-home MW has no coarse common step. An exact integer
+    # grid is then millions of bins and a decision never returns. Cap the
+    # support and keep the exact grid whenever it is already small enough
+    # for a hand-checked fleet.
+    if _unit_support(pieces, step) > _MAX_UNITS:
+        total_mw = sum(online * mw for online, mw in pieces)
+        step = total_mw / _MAX_UNITS
     dist = np.array([1.0])
     for online, mw in pieces:
         units = max(1, int(round(mw / step)))
@@ -327,6 +334,18 @@ def _count_pmf(observation: Mapping[str, Any], product: str, survive: float, reg
             expanded[0] += region_fail
         dist = np.convolve(dist, expanded)
     return dist, step
+
+
+# Largest number of unit-slots scored exactly. Above this, round the step so a
+# varied fleet still returns a decision.
+_MAX_UNITS = 4096
+
+
+def _unit_support(pieces: list[tuple[int, float]], step: float) -> int:
+    """How many integer slots the distribution would use at `step`."""
+    if step <= 0:
+        return _MAX_UNITS + 1
+    return sum(online * max(1, int(round(mw / step))) for online, mw in pieces)
 
 
 def _common_step(megawatts: list[float]) -> float:

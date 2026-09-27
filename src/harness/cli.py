@@ -1,7 +1,7 @@
 """harness: score capacity policies on real ERCOT market data.
 
     harness run --scenario scenarios/baseline.yaml --start 2026-03-08 --end 2026-03-09
-    harness compare --policy constant_haircut --policy base_actual --scenario baseline --start 2026-03-08 --out compare
+    harness compare --policy constant_haircut --policy base_actual --scenario baseline --scenario caps_lifted --start 2026-03-08 --out compare
     harness replay --scenario scenarios/baseline.yaml --day 2026-03-08 --minutes 5 --out replay
     harness value --policy independent_newsvendor --forecaster persistence --scenario baseline --start 2026-03-08 --out value
 
@@ -34,7 +34,7 @@ from pathlib import Path
 import psycopg
 
 from harness.base_actual import BASE_QSE, grade_delivery, load_base_actual
-from harness.compare import write_comparison
+from harness.compare import comparison_table, curve_policies, write_suite
 from harness.external import ExternalPolicy
 from harness.farm import DEFAULT_DSN, Farm, load_sweep
 from harness.forecaster.cli import add_parser as add_forecast_parser
@@ -92,15 +92,17 @@ def main(argv: list[str] | None = None) -> int:
     add_forecast_parser(sub)
     _add_farm_parsers(sub)
 
-    compare = sub.add_parser("compare", help="score named policies and chart the revenue-vs-shortfall frontier")
+    compare = sub.add_parser("compare", help="score policies across scenarios on identical draws")
     compare.add_argument("--policy", action="append", required=True,
-                         help=f"built-in policy ({', '.join(BUILTIN)}), repeatable")
-    compare.add_argument("--scenario", required=True,
-                         help="scenario YAML file, or a preset name")
+                         help=f"built-in policy ({', '.join(BUILTIN)}) or an external command, repeatable")
+    compare.add_argument("--scenario", action="append", required=True,
+                         help="scenario YAML file or preset name, repeatable")
     compare.add_argument("--start", required=True, type=dt.date.fromisoformat,
                          help="first operating day (CPT), YYYY-MM-DD")
     compare.add_argument("--end", type=dt.date.fromisoformat, help="last operating day (default: --start)")
     compare.add_argument("--seed", type=_seed, help="random seed (default: the scenario's seed)")
+    compare.add_argument("--day", type=dt.date.fromisoformat,
+                         help="operating day for the capability chart (default: --start)")
     compare.add_argument("--market-dir", type=Path, help=f"market dataset (default {default_store_dir()})")
     compare.add_argument("--forecaster",
                          help="price forecaster whose output fills each observation; the comparison "
@@ -209,26 +211,47 @@ def _compare(args: argparse.Namespace) -> int:
     if end < args.start:
         print(f"harness: error: --end {end} is before --start {args.start}", file=sys.stderr)
         return 2
-    scenario = load_scenario(resolve_scenario(args.scenario))
+    day = args.day or args.start
+    if day < args.start or day > end:
+        print(f"harness: error: --day {day} is outside {args.start} to {end}", file=sys.stderr)
+        return 2
     market = functools.partial(load_intervals, store_dir=args.market_dir)
     frame = market(args.start, end) if args.forecaster else None
-    results = []
+    groups = []
     sections = []
-    for spec in args.policy:
-        def factory(spec: str = spec) -> Policy:
-            return _policy(spec, {}, scenario, 1.0, "last_good",
-                           start=args.start, end=end, store_dir=args.market_dir)
+    for spec in args.scenario:
+        scenario = load_scenario(resolve_scenario(spec))
+        results = []
+        names: set[str] = set()
+        for policy_spec in args.policy:
+            if frame is not None:
+                def factory(policy_spec: str = policy_spec, scenario: Scenario = scenario) -> Policy:
+                    return _policy(policy_spec, {}, scenario, 1.0, "last_good",
+                                   start=args.start, end=end, store_dir=args.market_dir)
 
-        if args.forecaster and frame is not None:
-            report, result = measure_forecast_value(
-                factory, scenario, args.start, end, args.seed, market, args.forecaster, frame)
-            results.append(result)
-            sections.append(render_forecast_value(report))
-        else:
-            results.append(run(factory(), scenario, args.start, end, args.seed, market=market))
-    write_comparison(results, scenario, args.out,
-                     forecast_value="\n".join(sections) if sections else None)
-    print(f"Wrote {args.out / 'frontier.svg'} and exceedance.md")
+                report, result = measure_forecast_value(
+                    factory, scenario, args.start, end, args.seed, market, args.forecaster, frame)
+                results.append(result)
+                sections.append(render_forecast_value(report))
+            else:
+                policy = _policy(policy_spec, {}, scenario, 1.0, "last_good",
+                                 start=args.start, end=end, store_dir=args.market_dir)
+                results.append(run(policy, scenario, args.start, end, args.seed, market=market))
+            names.add(next(iter(results[-1].scorecards.values())).policy)
+        for policy in curve_policies(scenario, names):
+            forecaster = build_forecaster(args.forecaster, frame, 1.0, "last_good") if frame is not None else None
+            results.append(run(
+                policy, scenario, args.start, end, args.seed, market=market, forecaster=forecaster))
+        groups.append((scenario, results))
+    write_suite(groups, args.out, day)
+    if sections:
+        note = "\n\n".join(sections).strip() + "\n"
+        for name in ("exceedance.md", "comparison.md"):
+            path = args.out / name
+            path.write_text(path.read_text().rstrip() + "\n\n" + note)
+    sys.stdout.write(comparison_table(groups))
+    print(f"Wrote {args.out / 'comparison.md'}, {args.out / 'intervals.parquet'}, "
+          f"{args.out / 'frontier.svg'}, exceedance.md, and {args.out / 'charts'}")
     return 0
 
 
