@@ -119,25 +119,25 @@ def run(
                 seen = next(c for c in cases if c.name == scenario.fleet.quantile_mock.typical)
                 if moving:
                     faults, decisions, seen_violations = _evolve(
-                        policy, scenario, rows, seen, deployed, homes, forecasts, forecast_horizon,
+                        policy, scenario, day, streams, rows, seen, deployed, homes, forecasts, forecast_horizon,
                         forecaster, price_horizon_hours, price_quantiles)
                     plan = [(case, seen, decisions, faults,
                              seen_violations if case is seen else _replay(scenario, case, deployed, decisions))
                             for case in cases]
                 else:
                     faults, decisions = _decide(
-                        policy, scenario, rows, seen, homes, forecasts, forecast_horizon,
+                        policy, scenario, day, streams, rows, seen, homes, forecasts, forecast_horizon,
                         forecaster, price_horizon_hours, price_quantiles)
                     plan = [(case, seen, decisions, faults, 0) for case in cases]
             elif moving:
                 # A fresh pass per case, so a fallback cannot leak across quantiles.
                 plan = [_evolved_pass(
-                    policy, scenario, rows, case, deployed, homes, forecasts, forecast_horizon,
+                    policy, scenario, day, streams, rows, case, deployed, homes, forecasts, forecast_horizon,
                     forecaster, price_horizon_hours, price_quantiles)
                     for case in cases]
             else:
                 plan = [(*_case_pass(
-                    policy, scenario, rows, case, homes, forecasts, forecast_horizon,
+                    policy, scenario, day, streams, rows, case, homes, forecasts, forecast_horizon,
                     forecaster, price_horizon_hours, price_quantiles), 0)
                     for case in cases]
             for case, seen, reported, faults, violations in plan:
@@ -146,7 +146,8 @@ def run(
                 observed[case.name] = seen.name
                 dumps.append(dump.assign(policy_view=view, observed_case=seen.name))
         return RunResult(
-            {case: Scorecard(policy.name, scenario.name, seed, case, view, observed[case], tuple(results))
+            {case: Scorecard(policy.name, scenario.name, seed, case, view, observed[case], tuple(results),
+                             _beliefs(policy))
              for case, results in days.items()},
             pd.concat(dumps, ignore_index=True),
         )
@@ -157,25 +158,27 @@ def run(
             close_forecaster()
 
 
-def _case_pass(policy: Policy, scenario: Scenario, rows: pd.DataFrame, case: FleetCase,
+def _case_pass(policy: Policy, scenario: Scenario, day: dt.date, streams: RandomStreams,
+               rows: pd.DataFrame, case: FleetCase,
                homes: Sequence[Mapping[str, Any]] | None, forecasts: ForecastQuery | None,
                forecast_horizon: dt.timedelta, forecaster: Any | None,
                price_horizon_hours: int, price_quantiles: Sequence[float],
                ) -> tuple[FleetCase, FleetCase, dict[str, np.ndarray], FaultCounts]:
     faults, decisions = _decide(
-        policy, scenario, rows, case, homes, forecasts, forecast_horizon,
+        policy, scenario, day, streams, rows, case, homes, forecasts, forecast_horizon,
         forecaster, price_horizon_hours, price_quantiles,
     )
     return case, case, decisions, faults
 
 
-def _evolved_pass(policy: Policy, scenario: Scenario, rows: pd.DataFrame, case: FleetCase,
+def _evolved_pass(policy: Policy, scenario: Scenario, day: dt.date, streams: RandomStreams,
+                  rows: pd.DataFrame, case: FleetCase,
                   deployed: dict[str, np.ndarray], homes: Sequence[Mapping[str, Any]] | None,
                   forecasts: ForecastQuery | None, forecast_horizon: dt.timedelta,
                   forecaster: Any | None, price_horizon_hours: int, price_quantiles: Sequence[float],
                   ) -> tuple[FleetCase, FleetCase, dict[str, np.ndarray], FaultCounts, int]:
     faults, decisions, violations = _evolve(
-        policy, scenario, rows, case, deployed, homes, forecasts, forecast_horizon,
+        policy, scenario, day, streams, rows, case, deployed, homes, forecasts, forecast_horizon,
         forecaster, price_horizon_hours, price_quantiles)
     return case, case, decisions, faults, violations
 
@@ -192,7 +195,8 @@ def _replay(scenario: Scenario, case: FleetCase, deployed: dict[str, np.ndarray]
     return violations
 
 
-def _evolve(policy: Policy, scenario: Scenario, rows: pd.DataFrame, case: FleetCase,
+def _evolve(policy: Policy, scenario: Scenario, day: dt.date, streams: RandomStreams,
+            rows: pd.DataFrame, case: FleetCase,
             deployed: dict[str, np.ndarray], homes: Sequence[Mapping[str, Any]] | None,
             forecasts: ForecastQuery | None, forecast_horizon: dt.timedelta,
             forecaster: Any | None = None, price_horizon_hours: int = 24,
@@ -202,6 +206,7 @@ def _evolve(policy: Policy, scenario: Scenario, rows: pd.DataFrame, case: FleetC
     begin_day = getattr(policy, "begin_day", None)
     if callable(begin_day):
         begin_day()
+    _arm(policy, streams, day)
     if forecaster is not None:
         begin_forecast = getattr(forecaster, "begin_day", None)
         if callable(begin_forecast):
@@ -248,7 +253,8 @@ def _mw_h(mw: np.ndarray) -> float:
     return float(mw.sum() * INTERVAL_H)
 
 
-def _decide(policy: Policy, scenario: Scenario, rows: pd.DataFrame, seen: FleetCase,
+def _decide(policy: Policy, scenario: Scenario, day: dt.date, streams: RandomStreams,
+           rows: pd.DataFrame, seen: FleetCase,
            homes: Sequence[Mapping[str, Any]] | None, forecasts: ForecastQuery | None,
            forecast_horizon: dt.timedelta, forecaster: Any | None = None,
            price_horizon_hours: int = 24, price_quantiles: Sequence[float] = (0.1, 0.5, 0.9),
@@ -261,6 +267,7 @@ def _decide(policy: Policy, scenario: Scenario, rows: pd.DataFrame, seen: FleetC
     begin_day = getattr(policy, "begin_day", None)
     if callable(begin_day):
         begin_day()
+    _arm(policy, streams, day)
     if forecaster is not None:
         begin_forecast = getattr(forecaster, "begin_day", None)
         if callable(begin_forecast):
@@ -286,6 +293,21 @@ def _hourly_forecaster(forecaster: Any | None, rows: pd.DataFrame, forecasts: Fo
         forecaster, rows, forecasts, forecast_horizon,
         horizon_hours=price_horizon_hours, quantiles=price_quantiles,
     )
+
+
+def _arm(policy: Policy, streams: RandomStreams, day: dt.date) -> None:
+    """Give the policy this day's generator, when it samples (Monte Carlo)."""
+    arm = getattr(policy, "arm", None)
+    if callable(arm):
+        arm(streams, day)
+
+
+def _beliefs(policy: Policy) -> dict[str, float] | None:
+    """The policy's recorded belief, or None when it does not carry one."""
+    beliefs = getattr(policy, "beliefs", None)
+    if not isinstance(beliefs, Mapping):
+        return None
+    return {str(key): float(value) for key, value in beliefs.items()}
 
 
 def _faults(policy: Policy) -> FaultCounts:

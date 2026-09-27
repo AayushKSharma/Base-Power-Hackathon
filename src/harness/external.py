@@ -23,6 +23,7 @@ from typing import IO, Any
 
 from harness.observation import Observation
 from harness.policy import Capability, PolicyError
+from harness.reference import Belief, beliefs_from_mapping
 from harness.products import PRODUCTS
 from harness.protocol import (
     decode, encode, for_policy, hello_message, observation_message, parse_capability, parse_hello,
@@ -55,6 +56,8 @@ class JsonChild:
         self._fallback_mode = fallback
         self._name = " ".join(self.command)
         self._wants_per_home = False
+        self._beliefs: dict[str, float] | None = None
+        self._random: dict[str, Any] | None = None
         self.look_ahead = False
         self._hello: dict[str, Any] | None = None
         self._last_good: Any = None
@@ -133,6 +136,13 @@ class JsonChild:
             self._stop()
             return False
         self._name, _, self._wants_per_home = parsed
+        if "beliefs" in message:
+            beliefs = beliefs_from_mapping(message.get("beliefs"))
+            if beliefs is None:
+                self._add(malformed=1, fallbacks=1)
+                self._stop()
+                return False
+            self._beliefs = beliefs
         self._hello = message
         look_ahead = message.get("look_ahead", False)
         self.look_ahead = look_ahead if isinstance(look_ahead, bool) else False
@@ -243,6 +253,11 @@ class ExternalPolicy:
         return self._child.name
 
     @property
+    def beliefs(self) -> dict[str, float]:
+        """The hello's belief, or baseline calm conditions when the process omits one."""
+        return self._child._beliefs if self._child._beliefs is not None else Belief().as_dict()
+
+    @property
     def faults(self) -> FaultCounts:
         return self._child.faults
 
@@ -254,9 +269,23 @@ class ExternalPolicy:
         """
         self._child.begin_day()
 
+    def arm(self, streams: Any, day: Any) -> None:
+        """Tell the child which harness generator to sample, for this day."""
+        self._child._random = {
+            "scenario": streams.scenario,
+            "seed": int(streams.seed),
+            "day": day.isoformat(),
+        }
+
     def decide(self, observation: Observation) -> Capability:
+        def message_for(wants: bool) -> dict[str, Any]:
+            message = observation_message(for_policy(observation, wants_per_home=wants))
+            if self._child._random is not None:
+                message["random"] = dict(self._child._random)
+            return message
+
         return self._child.request(
-            lambda wants: observation_message(for_policy(observation, wants_per_home=wants)),
+            message_for,
             parse_capability,
             lambda: {product: 0.0 for product in PRODUCTS},
         )

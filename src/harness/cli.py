@@ -40,7 +40,10 @@ def main(argv: list[str] | None = None) -> int:
                          help=f"built-in policy ({', '.join(BUILTIN)}) or an external command "
                               "(default constant_haircut)")
     run_cmd.add_argument("--param", action="append", default=[], metavar="KEY=VALUE",
-                         help="built-in policy parameter, repeatable; constant_haircut takes fraction (default 0.9)")
+                         help="built-in policy parameter, repeatable. constant_haircut takes fraction "
+                              "(default 0.9); reliability_target takes epsilon (default 0.05); "
+                              "correlated_newsvendor takes samples (default 64). Every reference "
+                              "policy also takes belief parameters such as compliance_per_mw")
     run_cmd.add_argument("--decision-timeout", type=float, default=1.0,
                          help="seconds an external policy has to answer one decision (default 1)")
     run_cmd.add_argument("--fallback", choices=("last_good", "zero"), default="last_good",
