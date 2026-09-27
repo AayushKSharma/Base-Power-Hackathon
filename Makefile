@@ -1,6 +1,6 @@
 PY ?= .venv/bin/python
 
-.PHONY: install test typecheck market-data market-report fixtures base-actual base-actual-summary forecast-data forecast-report
+.PHONY: install test typecheck market-data market-report fixtures base-actual base-actual-summary forecast-data forecast-report calibrate-quantiles
 
 install:
 	python3 -m venv .venv
@@ -40,3 +40,11 @@ forecast-data:
 
 forecast-report:
 	$(PY) -m harness.forecast report
+
+# Quantile mocks from ingested Base-actual days (offline). Pass START=YYYY-MM-DD
+# and END=YYYY-MM-DD. Optional STORE= (default data/market) and OUT=
+# (default data/calibration/base-actual).
+calibrate-quantiles:
+	@test -n "$(START)" && test -n "$(END)" || { echo "pass START=YYYY-MM-DD END=YYYY-MM-DD"; exit 1; }
+	$(PY) -m harness.calibration --store-dir $(if $(STORE),$(STORE),data/market) \
+		--start $(START) --end $(END) --out $(if $(OUT),$(OUT),data/calibration/base-actual)

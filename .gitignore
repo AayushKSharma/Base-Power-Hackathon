@@ -18,3 +18,6 @@ data/runs/
 # Forecast-input store: raw vintages and the normalized store are rebuilt locally
 data/forecast-raw/
 data/forecasts/
+
+# Calibrated quantile mocks written by `make calibrate-quantiles`
+data/calibration/
