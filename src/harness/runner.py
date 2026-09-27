@@ -74,6 +74,9 @@ def run(
     homes: Sequence[Mapping[str, Any]] | None = None,
     forecasts: ForecastQuery | None = None,
     forecast_horizon: dt.timedelta = DEFAULT_HORIZON,
+    forecaster: Any | None = None,
+    price_horizon_hours: int = 24,
+    price_quantiles: Sequence[float] = (0.1, 0.5, 0.9),
 ) -> RunResult:
     """Score `policy` on `scenario` over operating days [start, end].
 
@@ -81,6 +84,8 @@ def run(
     which defaults to the market-dataset loader. `homes`, when given, is
     attached to every observation; an external policy receives it only if its
     handshake asks. `forecasts`, when given, fills each observation from `as_of`.
+    `forecaster`, when given, fills each observation's forecaster section with
+    one quantile trajectory per hour.
     """
     seed = scenario.seed if seed is None else seed
     streams = RandomStreams(scenario.name, seed)
@@ -92,6 +97,7 @@ def run(
     observed: dict[str, str] = {}
     dumps = []
     close = getattr(policy, "close", None)
+    close_forecaster = getattr(forecaster, "close", None) if forecaster is not None else None
     try:
         for group, rows in intervals.groupby(intervals["operating_day"].dt.date, sort=True):
             day = cast(dt.date, group)
@@ -99,12 +105,17 @@ def run(
             if view == TYPICAL:
                 # One decision pass. Its faults are the same events on every case.
                 seen = next(c for c in cases if c.name == scenario.fleet.quantile_mock.typical)
-                faults, decisions = _decide(policy, scenario, rows, seen, homes, forecasts, forecast_horizon)
+                faults, decisions = _decide(
+                    policy, scenario, rows, seen, homes, forecasts, forecast_horizon,
+                    forecaster, price_horizon_hours, price_quantiles,
+                )
                 plan = [(case, seen, decisions, faults) for case in cases]
             else:
                 # A fresh pass per case, so a fallback cannot leak across quantiles.
-                plan = [_case_pass(policy, scenario, rows, case, homes, forecasts, forecast_horizon)
-                        for case in cases]
+                plan = [_case_pass(
+                    policy, scenario, rows, case, homes, forecasts, forecast_horizon,
+                    forecaster, price_horizon_hours, price_quantiles,
+                ) for case in cases]
             for case, seen, reported, faults in plan:
                 result, dump = _score(scenario, day, rows, case, reported, faults)
                 days.setdefault(case.name, []).append(result)
@@ -118,13 +129,19 @@ def run(
     finally:
         if callable(close):
             close()
+        if callable(close_forecaster):
+            close_forecaster()
 
 
 def _case_pass(policy: Policy, scenario: Scenario, rows: pd.DataFrame, case: FleetCase,
                homes: Sequence[Mapping[str, Any]] | None, forecasts: ForecastQuery | None,
-               forecast_horizon: dt.timedelta,
+               forecast_horizon: dt.timedelta, forecaster: Any | None,
+               price_horizon_hours: int, price_quantiles: Sequence[float],
                ) -> tuple[FleetCase, FleetCase, dict[str, np.ndarray], FaultCounts]:
-    faults, decisions = _decide(policy, scenario, rows, case, homes, forecasts, forecast_horizon)
+    faults, decisions = _decide(
+        policy, scenario, rows, case, homes, forecasts, forecast_horizon,
+        forecaster, price_horizon_hours, price_quantiles,
+    )
     return case, case, decisions, faults
 
 
@@ -140,7 +157,9 @@ def _mw_h(mw: np.ndarray) -> float:
 
 def _decide(policy: Policy, scenario: Scenario, rows: pd.DataFrame, seen: FleetCase,
            homes: Sequence[Mapping[str, Any]] | None, forecasts: ForecastQuery | None,
-           forecast_horizon: dt.timedelta) -> tuple[FaultCounts, dict[str, np.ndarray]]:
+           forecast_horizon: dt.timedelta, forecaster: Any | None = None,
+           price_horizon_hours: int = 24, price_quantiles: Sequence[float] = (0.1, 0.5, 0.9),
+           ) -> tuple[FaultCounts, dict[str, np.ndarray]]:
     """The policy's reported MW per product for each interval, seeing the fleet case `seen`.
 
     `begin_day`, when the policy has one, drops remembered state before the pass.
@@ -149,11 +168,31 @@ def _decide(policy: Policy, scenario: Scenario, rows: pd.DataFrame, seen: FleetC
     begin_day = getattr(policy, "begin_day", None)
     if callable(begin_day):
         begin_day()
+    if forecaster is not None:
+        begin_forecast = getattr(forecaster, "begin_day", None)
+        if callable(begin_forecast):
+            begin_forecast()
     faults_before = _faults(policy)
+    hourly = _hourly_forecaster(forecaster, rows, forecasts, forecast_horizon,
+                                price_horizon_hours, price_quantiles)
     decisions = [policy.decide(obs) for obs in observations(
-        rows, scenario, seen, homes=homes, forecasts=forecasts, forecast_horizon=forecast_horizon)]
+        rows, scenario, seen, homes=homes, forecasts=forecasts, forecast_horizon=forecast_horizon,
+        forecaster=hourly)]
     reported = {product: np.array([float(d[product]) for d in decisions]) for product in PRODUCTS}
     return _faults(policy) - faults_before, reported
+
+
+def _hourly_forecaster(forecaster: Any | None, rows: pd.DataFrame, forecasts: ForecastQuery | None,
+                       forecast_horizon: dt.timedelta, price_horizon_hours: int,
+                       price_quantiles: Sequence[float]):
+    if forecaster is None:
+        return None
+    from harness.forecaster.attach import hourly_forecasts
+
+    return hourly_forecasts(
+        forecaster, rows, forecasts, forecast_horizon,
+        horizon_hours=price_horizon_hours, quantiles=price_quantiles,
+    )
 
 
 def _faults(policy: Policy) -> FaultCounts:
