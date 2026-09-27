@@ -1,6 +1,6 @@
 PY ?= .venv/bin/python
 
-.PHONY: install test typecheck market-data market-report fixtures base-actual base-actual-summary forecast-data forecast-report calibrate-quantiles
+.PHONY: install test typecheck market-data market-report fixtures base-actual base-actual-summary forecast-data forecast-report calibrate-quantiles replay chaos
 
 install:
 	python3 -m venv .venv
@@ -48,3 +48,22 @@ calibrate-quantiles:
 	@test -n "$(START)" && test -n "$(END)" || { echo "pass START=YYYY-MM-DD END=YYYY-MM-DD"; exit 1; }
 	$(PY) -m harness.calibration --store-dir $(if $(STORE),$(STORE),data/market) \
 		--start $(START) --end $(END) --out $(if $(OUT),$(OUT),data/calibration/base-actual)
+
+# Live replay of the demo day. DAY=YYYY-MM-DD MINUTES= OUT= MARKET=
+DAY ?= 2026-03-08
+MINUTES ?= 4
+
+replay:
+	$(PY) -m harness replay --policy constant_haircut --param fraction=0.5 \
+		--scenario scenarios/baseline.yaml --day $(DAY) --minutes $(MINUTES) \
+		--seed 7 --out $(if $(OUT),$(OUT),replay) $(if $(MARKET),--market-dir $(MARKET))
+
+# The same demo day with chaos/demo.yaml. Postgres is reused when it is already up.
+chaos:
+	@$(PY) -c "import psycopg; psycopg.connect('postgresql://harness:harness@127.0.0.1:54329/harness').close()" \
+		|| docker compose up -d --wait
+	$(PY) -m harness replay --policy constant_haircut --param fraction=0.5 \
+		--scenario scenarios/baseline.yaml --day $(DAY) --minutes $(MINUTES) \
+		--seed 7 --chaos chaos/demo.yaml \
+		--database postgresql://harness:harness@127.0.0.1:54329/harness \
+		--out $(if $(OUT),$(OUT),chaos-replay) $(if $(MARKET),--market-dir $(MARKET))

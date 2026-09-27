@@ -17,6 +17,7 @@ The run farm evaluates a sweep in parallel:
     harness status
     harness chaos --sweep sweep.yaml --seed 11 --workers 4
     harness bench --sweep sweep.yaml --out bench
+    harness bench-live --day 2026-03-08 --out docs/bench/live.md
 """
 
 from __future__ import annotations
@@ -47,7 +48,8 @@ from harness.market import MarketDataMissing, load_intervals
 from harness.market.dataset import default_store_dir
 from harness.paths import runs_dir
 from harness.policy import BUILTIN, Policy, PolicyError, base_actual_policy, builtin_policy
-from harness.replay import ReplayError, replay as replay_day
+from harness.replay import ChaosError, ReplayError, load_chaos, replay as replay_day
+from harness.replay.live_bench import DEFAULT_AGENTS, run_live_bench, write_live
 from harness.report import render_report
 from harness.runner import INTERVALS_FILE, REPORT_FILE, SCORECARD_FILE, run
 from harness.value import measure_forecast_value, render_forecast_value, write_forecast_value
@@ -134,7 +136,10 @@ def main(argv: list[str] | None = None) -> int:
                             help="simulated seconds per wall-clock second (default: as fast as possible)")
     replay_cmd.add_argument("--seed", type=_seed, help="random seed (default: the scenario's seed)")
     replay_cmd.add_argument("--market-dir", type=Path, help=f"market dataset (default {default_store_dir()})")
-    replay_cmd.add_argument("--out", type=Path, required=True, help="directory for timeline.json")
+    replay_cmd.add_argument("--out", type=Path, required=True, help="directory for timeline.json and timeline.png")
+    replay_cmd.add_argument("--chaos", type=Path, help="chaos schedule YAML; the same seed replays the same failures")
+    replay_cmd.add_argument("--database", default=None,
+                            help="Postgres URL used when the schedule restarts the coordinator")
 
     value = sub.add_parser(
         "value",
@@ -158,6 +163,21 @@ def main(argv: list[str] | None = None) -> int:
                        help="used when an external policy or forecaster fails (default last_good)")
     value.add_argument("--out", type=Path, required=True, help="output directory")
 
+    live = sub.add_parser(
+        "bench-live",
+        help="measure live-replay tick rate and reaction/recovery latency at 10k and 50k agents",
+    )
+    live.add_argument("--agents", type=int, action="append", dest="agent_counts",
+                      help="fleet size to measure, repeatable (default 10000 then 50000)")
+    live.add_argument("--day", type=dt.date.fromisoformat, default=dt.date(2026, 3, 8),
+                      help="operating day (default 2026-03-08)")
+    live.add_argument("--seed", type=_seed, default=7, help="random seed (default 7)")
+    live.add_argument("--market-dir", type=Path, help=f"market dataset (default {default_store_dir()})")
+    live.add_argument("--out", type=Path, default=Path("docs/bench/live.md"),
+                      help="markdown file for the measured rates (default docs/bench/live.md)")
+    live.add_argument("--budget", type=float,
+                      help="wall-clock seconds allowed for each fleet (default 600 at 10k, 240 at 50k)")
+
     args = parser.parse_args(argv)
     if args.command == "forecast":
         return forecast_command(args)
@@ -175,6 +195,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "replay":
         try:
             return _replay(args)
+        except (ScenarioError, PolicyError, ReplayError, ChaosError) as e:
+            print(f"harness: error: {e}", file=sys.stderr)
+            return 2
+        except MarketDataMissing as e:
+            print(f"harness: error: {e}", file=sys.stderr)
+            return 1
+    if args.command == "bench-live":
+        try:
+            return _bench_live(args)
         except (ScenarioError, PolicyError, ReplayError) as e:
             print(f"harness: error: {e}", file=sys.stderr)
             return 2
@@ -263,12 +292,49 @@ def _replay(args: argparse.Namespace) -> int:
                      start=args.day, end=args.day, store_dir=args.market_dir)
     args.out.mkdir(parents=True, exist_ok=True)
     timeline = args.out / "timeline.json"
+    chart = args.out / "timeline.png"
     result = replay_day(
         policy, scenario, args.day, seed=args.seed, minutes=args.minutes, tick_s=args.tick,
         speed=args.speed, market=functools.partial(load_intervals, store_dir=args.market_dir),
-        out=timeline,
+        out=timeline, chaos=None if args.chaos is None else load_chaos(args.chaos),
+        chart=chart, dsn=args.database,
     )
     print(f"Wrote {timeline} ({len(result.ticks)} ticks)")
+    print(f"Wrote {chart}")
+    metrics = result.metrics
+    print(
+        f"reaction p50 {_seconds(metrics.reaction_p50_s)}  p99 {_seconds(metrics.reaction_p99_s)}  "
+        f"recovery p50 {_seconds(metrics.recovery_p50_s)}  p99 {_seconds(metrics.recovery_p99_s)}"
+    )
+    print(
+        f"floor violations {metrics.floor_violations}  "
+        f"duplicate commands {metrics.duplicate_commands}  "
+        f"commands to dead agents {metrics.dead_commands}"
+    )
+    return 0
+
+
+def _seconds(value: float) -> str:
+    if value != value:
+        return "n/a"
+    return f"{value:.3f}s"
+
+
+def _bench_live(args: argparse.Namespace) -> int:
+    if args.budget is not None and args.budget <= 0:
+        print("harness: error: --budget must be positive", file=sys.stderr)
+        return 2
+    counts = tuple(args.agent_counts) if args.agent_counts else DEFAULT_AGENTS
+    if any(count < 1 for count in counts):
+        print("harness: error: --agents must be positive", file=sys.stderr)
+        return 2
+    text = run_live_bench(
+        functools.partial(load_intervals, store_dir=args.market_dir), args.day, counts,
+        seed=args.seed, budget=args.budget,
+    )
+    path = write_live(text, args.out)
+    sys.stdout.write(text)
+    print(f"Wrote {path}")
     return 0
 
 

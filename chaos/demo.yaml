@@ -1,0 +1,11 @@
+# Demo-day chaos. Times are simulated seconds from the start of the operating day.
+# Two of the baseline scenario's ten agent hosts is 20% of the fleet.
+# The coordinator restart reads Postgres (make chaos brings it up).
+events:
+  - {type: host_kill, at_s: 2, region: 0}
+  - {type: host_kill, at_s: 2, region: 1}
+  - {type: drop, at_s: 30, until_s: 50, percent: 10}
+  - {type: telemetry_delay, at_s: 60, until_s: 80, delay_s: 4}
+  - {type: partition, at_s: 90, until_s: 120, regions: [2]}
+  - {type: region_outage, at_s: 100, region: 3}
+  - {type: coordinator_restart, at_s: 200}

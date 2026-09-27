@@ -8,23 +8,40 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
+
 
 class Transport:
-    """Drop, delay, and partition on the path to the coordinator."""
+    """Drop, delay, and partition on the path to the coordinator.
+
+    `drop_rate` is a percent in 0..100. Each batch draws once from `rng`, so
+    the same seed and the same order of heartbeats discards the same ones.
+    """
 
     def __init__(self, delay_s: float = 0.0, *,
                  drop: tuple[tuple[int, float], ...] = (),
-                 partition_regions: frozenset[int] = frozenset()) -> None:
+                 partition_regions: frozenset[int] = frozenset(),
+                 drop_rate: float = 0.0,
+                 rng: np.random.Generator | None = None) -> None:
         if delay_s < 0:
             raise ValueError(f"delay must be non-negative, got {delay_s}")
+        if not 0 <= drop_rate <= 100:
+            raise ValueError(f"drop rate must be a percent from 0 to 100, got {drop_rate}")
         self.delay_s = delay_s
         self._drop = set(drop)
         self._partition = partition_regions
+        self.drop_rate = drop_rate
+        self._rng = rng
         self._held: list[tuple[float, dict[str, Any]]] = []
+
+    def set_partition(self, regions: frozenset[int]) -> None:
+        self._partition = regions
 
     def submit(self, batch: dict[str, Any], t_s: float) -> None:
         region = int(batch["region"])
         if region in self._partition or (region, t_s) in self._drop:
+            return
+        if self.drop_rate > 0 and self._rng is not None and self._rng.random() < self.drop_rate / 100.0:
             return
         self._held.append((t_s + self.delay_s, batch))
 
