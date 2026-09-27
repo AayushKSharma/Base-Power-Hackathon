@@ -13,6 +13,7 @@ The run farm evaluates a sweep in parallel:
     harness work --market-dir data/market
     harness aggregate --out data/runs/sweep
     harness status
+    harness chaos --sweep sweep.yaml --seed 11 --workers 4
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ import os
 import re
 import shlex
 import sys
+import time
 from pathlib import Path
 
 import psycopg
@@ -99,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "forecast":
         return forecast_command(args)
-    if args.command in {"submit", "work", "aggregate", "status"}:
+    if args.command in {"submit", "work", "aggregate", "status", "chaos"}:
         return _farm_command(args)
     if args.command == "compare":
         try:
@@ -247,6 +249,10 @@ def _add_farm_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
     work.add_argument("--worker-id", help="lease owner (default hostname and pid)")
     work.add_argument("--lease-seconds", type=float, default=30,
                       help="how long a claim lasts before another worker may take it (default 30)")
+    work.add_argument("--max-attempts", type=int, default=3,
+                      help="times a raising job is tried before it is failed (default 3)")
+    work.add_argument("--backoff-seconds", type=float, default=1,
+                      help="base delay before a failed attempt is tried again; doubles each time (default 1)")
 
     aggregate = sub.add_parser("aggregate", help="build scorecards from per-day results")
     aggregate.add_argument("--database", default=DEFAULT_DSN, help=f"Postgres URL (default {DEFAULT_DSN})")
@@ -254,6 +260,19 @@ def _add_farm_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
 
     status = sub.add_parser("status", help="queued, leased, done and failed counts, plus throughput")
     status.add_argument("--database", default=DEFAULT_DSN, help=f"Postgres URL (default {DEFAULT_DSN})")
+
+    chaos = sub.add_parser("chaos", help="run a sweep while killing workers at seeded times")
+    chaos.add_argument("--sweep", required=True, type=Path, help="sweep YAML file")
+    chaos.add_argument("--seed", required=True, type=_seed, help="seed for which workers die, and when")
+    chaos.add_argument("--workers", type=int, default=2, help="workers to run at once (default 2)")
+    chaos.add_argument("--database", default=DEFAULT_DSN, help=f"Postgres URL (default {DEFAULT_DSN})")
+    chaos.add_argument("--market-dir", type=Path, help=f"market dataset (default {default_store_dir()})")
+    chaos.add_argument("--lease-seconds", type=float, default=30,
+                       help="how long a claim lasts before another worker may take it (default 30)")
+    chaos.add_argument("--max-attempts", type=int, default=3,
+                       help="times a raising job is tried before it is failed (default 3)")
+    chaos.add_argument("--backoff-seconds", type=float, default=1,
+                       help="base delay before a failed attempt is tried again (default 1)")
 
 
 def _farm_command(args: argparse.Namespace) -> int:
@@ -267,11 +286,44 @@ def _farm_command(args: argparse.Namespace) -> int:
             if args.lease_seconds <= 0:
                 print("harness: error: --lease-seconds must be positive", file=sys.stderr)
                 return 2
+            if args.max_attempts < 1:
+                print("harness: error: --max-attempts must be at least 1", file=sys.stderr)
+                return 2
+            if args.backoff_seconds < 0:
+                print("harness: error: --backoff-seconds must not be negative", file=sys.stderr)
+                return 2
             worker = args.worker_id or f"{os.uname().nodename}-{os.getpid()}"
             farm = Farm(args.database, market_dir=args.market_dir,
-                        lease=dt.timedelta(seconds=args.lease_seconds))
-            done = farm.work(worker)
+                        lease=dt.timedelta(seconds=args.lease_seconds),
+                        max_attempts=args.max_attempts,
+                        backoff=dt.timedelta(seconds=args.backoff_seconds))
+            done = 0
+            while True:
+                done += farm.work(worker)
+                report = farm.status()
+                if report.queued == 0 and report.leased == 0:
+                    break
+                time.sleep(0.05)
             print(f"{worker} completed {done} jobs")
+            return 0
+        if args.command == "chaos":
+            if args.lease_seconds <= 0 or args.workers < 1:
+                print("harness: error: --lease-seconds and --workers must be positive", file=sys.stderr)
+                return 2
+            if args.market_dir is None:
+                args.market_dir = default_store_dir()
+            farm = Farm(args.database, market_dir=args.market_dir,
+                        lease=dt.timedelta(seconds=args.lease_seconds),
+                        max_attempts=args.max_attempts,
+                        backoff=dt.timedelta(seconds=args.backoff_seconds))
+            inserted = farm.submit(load_sweep(args.sweep))
+            chaos_report = farm.chaos(workers=args.workers, seed=args.seed, kill="both")
+            print(f"submitted {inserted} jobs")
+            print(
+                f"killed {chaos_report.killed_mid_job} workers mid-job, "
+                f"{chaos_report.killed_before_commit} before commit"
+            )
+            print(f"completed {chaos_report.committed} jobs")
             return 0
         if args.command == "aggregate":
             farm = Farm(args.database, market_dir=None)
@@ -286,6 +338,8 @@ def _farm_command(args: argparse.Namespace) -> int:
         report = Farm(args.database, market_dir=None).status()
         print(f"queued {report.queued}  leased {report.leased}  done {report.done}  failed {report.failed}")
         print(f"throughput {report.throughput_per_s:.3f} jobs/s")
+        for error in report.errors:
+            print(f"failed: {error}")
         return 0
     except (OSError, ValueError, PolicyError, psycopg.Error) as exc:
         print(f"harness: error: {exc}", file=sys.stderr)

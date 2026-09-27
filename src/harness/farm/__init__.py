@@ -5,6 +5,8 @@ one job. Workers claim jobs with ``SELECT … FOR UPDATE SKIP LOCKED`` under a
 time-limited lease, run the harness for that one day, and commit the result in
 the same transaction that marks the job done. The result's unique key is the
 job identity: policy name, policy version, scenario content hash, day, and seed.
+A raised job is retried after ``not_before``, then failed. A killed worker
+leaves the lease to expire, so the day is run again and written once.
 """
 
 from __future__ import annotations
@@ -12,8 +14,10 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import random
 import shlex
 import threading
+import time
 from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -34,6 +38,8 @@ from harness.scorecard import DayResult, FaultCounts, ProductTotals, Scorecard
 
 DEFAULT_DSN = "postgresql://harness:harness@127.0.0.1:54329/harness"
 _LEASE = dt.timedelta(seconds=30)
+_MAX_ATTEMPTS = 3
+_BACKOFF = dt.timedelta(seconds=1)
 
 _JOBS = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -54,6 +60,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     lease_owner text,
     lease_expires timestamptz,
     attempt integer NOT NULL DEFAULT 0,
+    not_before timestamptz,
     error text,
     created_at timestamptz NOT NULL,
     finished_at timestamptz,
@@ -214,6 +221,87 @@ class FarmStatus:
     done: int
     failed: int
     throughput_per_s: float
+    errors: tuple[str, ...] = ()
+
+
+class IncompleteSweep(ValueError):
+    """Aggregate was asked for a sweep that is not entirely done."""
+
+
+class WorkerKilled(Exception):
+    """Chaos stopped this worker after it claimed a job and before it committed."""
+
+
+@dataclass(frozen=True)
+class ChaosReport:
+    """How many jobs were committed, and how many workers chaos killed."""
+
+    committed: int
+    killed_mid_job: int
+    killed_before_commit: int
+
+
+class _ChaosPlan:
+    """Seeded choices of which claims die, and in which phase.
+
+    The first claims take each kill window this run asked for. One later
+    attempt may take a window the first pass never hit, so a single job still
+    dies after the scorecard is computed. The attempt after that finishes.
+    """
+
+    def __init__(self, seed: int, kill: str):
+        if kill not in {"mid", "before_commit", "both"}:
+            raise ValueError(f"kill must be mid, before_commit, or both, got {kill!r}")
+        self._rng = random.Random(seed)
+        self.kill = kill
+        self.killed_mid_job = 0
+        self.killed_before_commit = 0
+        self._lock = threading.Lock()
+        self._saw_mid = False
+        self._saw_commit = False
+        self._retry_spent = False
+
+    def decision(self, attempt: int) -> str | None:
+        with self._lock:
+            if attempt != 1:
+                # One later attempt may take a window the first pass never hit,
+                # so a single job still dies after computing and before committing.
+                # The attempt after that one finishes.
+                if self._retry_spent or not self._missing():
+                    return None
+                self._retry_spent = True
+                return self._choose(self._missing()[0])
+            missing = self._missing()
+            if missing:
+                return self._choose(missing[0])
+            if self._rng.randrange(2) == 0:
+                return None
+            return self._choose(self._allowed()[self._rng.randrange(len(self._allowed()))])
+
+    def _allowed(self) -> list[str]:
+        windows = []
+        if self.kill in {"mid", "both"}:
+            windows.append("mid")
+        if self.kill in {"before_commit", "both"}:
+            windows.append("before_commit")
+        return windows
+
+    def _missing(self) -> list[str]:
+        missing = []
+        if "mid" in self._allowed() and not self._saw_mid:
+            missing.append("mid")
+        if "before_commit" in self._allowed() and not self._saw_commit:
+            missing.append("before_commit")
+        return missing
+
+    def _choose(self, choice: str) -> str:
+        if choice == "mid":
+            self._saw_mid = True
+            self.killed_mid_job += 1
+        else:
+            self._saw_commit = True
+            self.killed_before_commit += 1
+        return choice
 
 
 class Clock:
@@ -227,11 +315,19 @@ class Farm:
     """One Postgres queue. Each call opens its own connection, so workers can share a Farm."""
 
     def __init__(self, dsn: str, *, market_dir: Path | None,
-                 lease: dt.timedelta = _LEASE, clock: Clock | None = None):
+                 lease: dt.timedelta = _LEASE, clock: Clock | None = None,
+                 max_attempts: int = _MAX_ATTEMPTS, backoff: dt.timedelta = _BACKOFF):
+        if max_attempts < 1:
+            raise ValueError(f"max_attempts must be at least 1, got {max_attempts}")
+        if backoff < dt.timedelta(0):
+            raise ValueError(f"backoff must not be negative, got {backoff}")
         self.dsn = dsn
         self.market_dir = None if market_dir is None else Path(market_dir)
         self.lease = lease
         self.clock = clock or Clock()
+        self.max_attempts = max_attempts
+        self.backoff = backoff
+        self._chaos: _ChaosPlan | None = None
 
     def submit(self, sweep: Sweep) -> int:
         """Insert one queued job per (policy, scenario, day, seed). Return how many were new."""
@@ -280,7 +376,10 @@ class Farm:
         return inserted
 
     def claim(self, worker_id: str) -> Lease | None:
-        """Claim the oldest queued or expired-lease job, or None when nothing is waiting."""
+        """Claim the oldest due job, or one whose lease has expired.
+
+        A queued job whose ``not_before`` is still in the future is left for later.
+        """
         now = self.clock.now()
         with self._connect() as conn:
             with conn.transaction():
@@ -289,7 +388,7 @@ class Farm:
                     """
                     WITH candidate AS (
                         SELECT id FROM jobs
-                        WHERE status = 'queued'
+                        WHERE (status = 'queued' AND (not_before IS NULL OR not_before <= %s))
                            OR (status = 'leased' AND lease_expires <= %s)
                         ORDER BY id
                         FOR UPDATE SKIP LOCKED
@@ -304,7 +403,7 @@ class Farm:
                     WHERE job.id = candidate.id
                     RETURNING job.id, job.attempt
                     """,
-                    (now, worker_id, now + self.lease),
+                    (now, now, worker_id, now + self.lease),
                 ).fetchone()
         if row is None:
             return None
@@ -319,6 +418,9 @@ class Farm:
         supplies the worker's reused external processes.
         """
         job = self._job(lease.job_id)
+        decision = None if self._chaos is None else self._chaos.decision(lease.attempt)
+        if decision == "mid":
+            raise WorkerKilled(f"worker {lease.owner} killed mid-job {lease.job_id}")
         scenario = load_scenario(job["scenario_path"])
         policy = _policy(job, scenario) if policies is None else policies.policy(job, scenario)
         with self._renewing(lease):
@@ -327,15 +429,65 @@ class Farm:
                 market=lambda start, end: load_intervals(start, end, store_dir=self.market_dir),
             )
         payload = json.dumps([card.to_dict() for card in result.scorecards.values()])
+        if decision == "before_commit":
+            raise WorkerKilled(f"worker {lease.owner} killed before committing job {lease.job_id}")
         return self._commit(job, lease, payload)
+
+    def chaos(self, *, workers: int, seed: int, kill: str = "both") -> ChaosReport:
+        """Run workers, killing them at seeded points, until every job is terminal.
+
+        ``kill`` is ``mid`` (while the job is held and before a result exists),
+        ``before_commit`` (after the scorecard is computed, before the result
+        row is written), or ``both``. A killed worker leaves its lease to
+        expire; a later attempt commits the only result.
+        """
+        if workers < 1:
+            raise ValueError(f"workers must be at least 1, got {workers}")
+        plan = _ChaosPlan(seed, kill)
+        self._chaos = plan
+        try:
+            for generation in range(64):
+                state = self.status()
+                if state.queued == 0 and state.leased == 0:
+                    return ChaosReport(state.done, plan.killed_mid_job, plan.killed_before_commit)
+                errors: list[BaseException] = []
+
+                def run_worker(worker_id: str) -> None:
+                    try:
+                        self.work(worker_id)
+                    except WorkerKilled:
+                        return
+                    except Exception as exc:
+                        errors.append(exc)
+
+                threads = [
+                    threading.Thread(target=run_worker, args=(f"chaos-{seed}-{generation}-{index}",))
+                    for index in range(workers)
+                ]
+                for thread in threads:
+                    thread.start()
+                for thread in threads:
+                    thread.join()
+                if errors:
+                    raise errors[0]
+                state = self.status()
+                if state.queued == 0 and state.leased == 0:
+                    return ChaosReport(state.done, plan.killed_mid_job, plan.killed_before_commit)
+                # Dead workers still hold leases, or a retry is waiting on not_before.
+                time.sleep(self.lease.total_seconds() + 0.1)
+            raise RuntimeError("chaos made no progress")
+        finally:
+            self._chaos = None
 
     def work(self, worker_id: str) -> int:
         """Claim and complete jobs until none are waiting. Return how many this worker committed.
 
         One external policy process is kept per command and reused across that
         worker's jobs. A crash still starts a new process, as the harness does
-        for a single run. A job whose harness run raises is marked failed, with
-        the error, and the worker continues. Processes are closed when it stops.
+        for a single run. A job whose harness run raises is queued again after
+        an exponential backoff, up to `max_attempts`, and then marked failed with
+        the last error. The worker continues either way. Processes are closed
+        when it stops.
         """
         committed = 0
         policies = _PolicyPool()
@@ -347,6 +499,8 @@ class Farm:
                 try:
                     if self.complete(lease, policies=policies):
                         committed += 1
+                except WorkerKilled:
+                    raise
                 except Exception as exc:
                     # The error stays on the job. The worker keeps claiming so one
                     # failure does not abandon the rest of the queue.
@@ -358,10 +512,17 @@ class Farm:
         """Scorecards per (policy, scenario, seed), combined from per-day sums and counts.
 
         Days of two policy versions are not combined: the version is part of job identity.
+        A sweep with queued, leased, or failed jobs is incomplete, and aggregate refuses it.
         """
         with self._connect() as conn:
             with conn.transaction():
                 self._ensure(conn)
+                report = self._counts(conn)
+                if report["queued"] or report["leased"] or report["failed"]:
+                    raise IncompleteSweep(
+                        f"sweep is incomplete: queued {report['queued']}, "
+                        f"leased {report['leased']}, failed {report['failed']}"
+                    )
                 rows = conn.execute("SELECT policy_version, scorecards FROM results").fetchall()
         grouped: dict[tuple[str, str, str, int], dict[str, list[Scorecard]]] = {}
         for row in rows:
@@ -380,14 +541,17 @@ class Farm:
 
     def status(self) -> FarmStatus:
         """Queued, leased, done and failed counts, plus completed jobs per second since submit."""
-        counts = {"queued": 0, "leased": 0, "done": 0, "failed": 0}
         with self._connect() as conn:
             with conn.transaction():
                 self._ensure(conn)
-                counted = conn.execute("SELECT status, count(*) AS n FROM jobs GROUP BY status").fetchall()
+                counts = self._counts(conn)
+                errors = tuple(
+                    str(row["error"])
+                    for row in conn.execute(
+                        "SELECT error FROM jobs WHERE status = 'failed' AND error IS NOT NULL ORDER BY id"
+                    ).fetchall()
+                )
                 span = conn.execute("SELECT min(created_at) AS started FROM jobs").fetchone()
-        for row in counted:
-            counts[str(row["status"])] = int(row["n"])
         started = None if span is None else span["started"]
         done = counts["done"]
         if started is None or done == 0:
@@ -395,7 +559,15 @@ class Farm:
         else:
             elapsed = (self.clock.now() - started).total_seconds()
             rate = done / elapsed if elapsed > 0 else float(done)
-        return FarmStatus(counts["queued"], counts["leased"], done, counts["failed"], rate)
+        return FarmStatus(counts["queued"], counts["leased"], done, counts["failed"], rate, errors)
+
+    @staticmethod
+    def _counts(conn: psycopg.Connection[dict[str, Any]]) -> dict[str, int]:
+        counts = {"queued": 0, "leased": 0, "done": 0, "failed": 0}
+        counted = conn.execute("SELECT status, count(*) AS n FROM jobs GROUP BY status").fetchall()
+        for row in counted:
+            counts[str(row["status"])] = int(row["n"])
+        return counts
 
     def _commit(self, job: Mapping[str, Any], lease: Lease, payload: str) -> bool:
         with self._connect() as conn:
@@ -430,16 +602,43 @@ class Farm:
         return True
 
     def _fail(self, lease: Lease, exc: BaseException) -> None:
+        """Queue the job again after a backoff, or mark it failed on the last attempt.
+
+        The backoff is `backoff * 2^(attempt-1)`, stored as `not_before`. The
+        update is fenced the same way completion is, so a worker that lost its
+        lease cannot reschedule someone else's claim.
+        """
+        message = str(exc)
+        now = self.clock.now()
         with self._connect() as conn:
             with conn.transaction():
+                locked = conn.execute(
+                    "SELECT attempt FROM jobs WHERE id = %s AND lease_owner = %s "
+                    "AND attempt = %s AND status = 'leased' FOR UPDATE",
+                    (lease.job_id, lease.owner, lease.attempt),
+                ).fetchone()
+                if locked is None:
+                    return
+                if int(locked["attempt"]) >= self.max_attempts:
+                    conn.execute(
+                        """
+                        UPDATE jobs
+                        SET status = 'failed', error = %s, not_before = NULL,
+                            lease_owner = NULL, lease_expires = NULL, finished_at = %s
+                        WHERE id = %s
+                        """,
+                        (message, now, lease.job_id),
+                    )
+                    return
+                delay = self.backoff * (2 ** (int(locked["attempt"]) - 1))
                 conn.execute(
                     """
                     UPDATE jobs
-                    SET status = 'failed', error = %s, lease_owner = NULL,
-                        lease_expires = NULL, finished_at = %s
-                    WHERE id = %s AND lease_owner = %s AND attempt = %s AND status = 'leased'
+                    SET status = 'queued', error = %s, not_before = %s,
+                        lease_owner = NULL, lease_expires = NULL, finished_at = NULL
+                    WHERE id = %s
                     """,
-                    (str(exc), self.clock.now(), lease.job_id, lease.owner, lease.attempt),
+                    (message, now + delay, lease.job_id),
                 )
 
     def _job(self, job_id: int) -> dict[str, Any]:
@@ -483,6 +682,7 @@ class Farm:
     def _ensure(conn: psycopg.Connection[dict[str, Any]]) -> None:
         conn.execute(_JOBS)
         conn.execute(_RESULTS)
+        conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS not_before timestamptz")
 
 
 def _identity(spec: PolicySpec, scenario: Scenario) -> dict[str, Any]:
