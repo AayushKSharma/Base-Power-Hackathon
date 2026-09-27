@@ -15,6 +15,7 @@ dependencies = [
     "pyyaml>=6",
     "openpyxl>=3.1",
     "requests>=2.31",
+    "psycopg[binary]>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -31,6 +32,9 @@ testpaths = ["tests"]
 filterwarnings = [
     # pandas 2.3 constructing Timedelta under NumPy >= 2.5; not our code.
     "ignore:The 'generic' unit for NumPy timedelta is deprecated:DeprecationWarning",
+]
+markers = [
+    "postgres: needs Docker Postgres; skipped when Docker is unavailable",
 ]
 
 [tool.mypy]

@@ -29,8 +29,13 @@ def _refuse_network(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def no_network(monkeypatch):
-    """Every test runs offline: the dataset is built from recorded raw files."""
+def no_network(monkeypatch, request):
+    """Every test runs offline: the dataset is built from recorded raw files.
+
+    Postgres tests talk to a local database and are exempt.
+    """
+    if request.node.get_closest_marker("postgres"):
+        return
     _refuse_network(monkeypatch)
 
 

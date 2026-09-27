@@ -5,6 +5,13 @@
 Prints a scorecard per fleet case (quantile mock P10..P90, or stochastic) and
 writes scorecard.json, a markdown report (report.md) and the per-interval
 data dump (intervals.parquet) to the output directory.
+
+The run farm evaluates a sweep in parallel:
+
+    harness submit --sweep sweep.yaml
+    harness work --market-dir data/market
+    harness aggregate --out data/runs/sweep
+    harness status
 """
 
 from __future__ import annotations
@@ -12,12 +19,16 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import functools
+import os
 import re
 import shlex
 import sys
 from pathlib import Path
 
+import psycopg
+
 from harness.external import ExternalPolicy
+from harness.farm import DEFAULT_DSN, Farm, load_sweep
 from harness.forecast import ForecastStore
 from harness.forecast.catalog import DEFAULT_HORIZON
 from harness.market import MarketDataMissing, load_intervals
@@ -27,7 +38,7 @@ from harness.policy import BUILTIN, Policy, PolicyError, builtin_policy
 from harness.report import render_report
 from harness.runner import INTERVALS_FILE, REPORT_FILE, SCORECARD_FILE, run
 from harness.scenario import Scenario, ScenarioError, load_scenario, resolve_scenario
-from harness.scorecard import render
+from harness.scorecard import render, to_json
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -67,10 +78,13 @@ def main(argv: list[str] | None = None) -> int:
     from harness.forecaster.cli import run as forecast_command
 
     add_forecast_parser(sub)
+    _add_farm_parsers(sub)
 
     args = parser.parse_args(argv)
     if args.command == "forecast":
         return forecast_command(args)
+    if args.command in {"submit", "work", "aggregate", "status"}:
+        return _farm_command(args)
     end = args.end or args.start
     if end < args.start:
         parser.error(f"--end {end} is before --start {args.start}")
@@ -136,3 +150,59 @@ def _seed(text: str) -> int:
 
 def _slug(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9._]+", "-", text).strip("-")
+
+
+def _add_farm_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    submit = sub.add_parser("submit", help="expand a sweep into one job per policy, scenario, day and seed")
+    submit.add_argument("--sweep", required=True, type=Path, help="sweep YAML file")
+    submit.add_argument("--database", default=DEFAULT_DSN, help=f"Postgres URL (default {DEFAULT_DSN})")
+
+    work = sub.add_parser("work", help="claim jobs and run the harness until the queue is empty")
+    work.add_argument("--database", default=DEFAULT_DSN, help=f"Postgres URL (default {DEFAULT_DSN})")
+    work.add_argument("--market-dir", type=Path, help=f"market dataset (default {default_store_dir()})")
+    work.add_argument("--worker-id", help="lease owner (default hostname and pid)")
+    work.add_argument("--lease-seconds", type=float, default=30,
+                      help="how long a claim lasts before another worker may take it (default 30)")
+
+    aggregate = sub.add_parser("aggregate", help="build scorecards from per-day results")
+    aggregate.add_argument("--database", default=DEFAULT_DSN, help=f"Postgres URL (default {DEFAULT_DSN})")
+    aggregate.add_argument("--out", type=Path, help="directory for one scorecard JSON per policy, scenario and seed")
+
+    status = sub.add_parser("status", help="queued, leased, done and failed counts, plus throughput")
+    status.add_argument("--database", default=DEFAULT_DSN, help=f"Postgres URL (default {DEFAULT_DSN})")
+
+
+def _farm_command(args: argparse.Namespace) -> int:
+    try:
+        if args.command == "submit":
+            farm = Farm(args.database, market_dir=None)
+            inserted = farm.submit(load_sweep(args.sweep))
+            print(f"submitted {inserted} jobs")
+            return 0
+        if args.command == "work":
+            if args.lease_seconds <= 0:
+                print("harness: error: --lease-seconds must be positive", file=sys.stderr)
+                return 2
+            worker = args.worker_id or f"{os.uname().nodename}-{os.getpid()}"
+            farm = Farm(args.database, market_dir=args.market_dir,
+                        lease=dt.timedelta(seconds=args.lease_seconds))
+            done = farm.work(worker)
+            print(f"{worker} completed {done} jobs")
+            return 0
+        if args.command == "aggregate":
+            farm = Farm(args.database, market_dir=None)
+            cards = farm.aggregate()
+            if args.out is not None:
+                args.out.mkdir(parents=True, exist_ok=True)
+                for (policy, scenario, seed), scorecards in sorted(cards.items()):
+                    name = _slug(f"{scenario}_{policy}_seed{seed}")
+                    (args.out / f"{name}.json").write_text(to_json(list(scorecards.values())))
+            print(f"aggregated {len(cards)} scorecards")
+            return 0
+        report = Farm(args.database, market_dir=None).status()
+        print(f"queued {report.queued}  leased {report.leased}  done {report.done}  failed {report.failed}")
+        print(f"throughput {report.throughput_per_s:.3f} jobs/s")
+        return 0
+    except (OSError, ValueError, PolicyError, psycopg.Error) as exc:
+        print(f"harness: error: {exc}", file=sys.stderr)
+        return 2
