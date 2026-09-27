@@ -60,7 +60,14 @@ def main(argv: list[str] | None = None) -> int:
                          help="hours of forecast valid time after each decision (default 168)")
     run_cmd.add_argument("--out", type=Path, help=f"output directory (default {runs_dir()}/<run name>)")
 
+    from harness.forecaster.cli import add_parser as add_forecast_parser
+    from harness.forecaster.cli import run as forecast_command
+
+    add_forecast_parser(sub)
+
     args = parser.parse_args(argv)
+    if args.command == "forecast":
+        return forecast_command(args)
     end = args.end or args.start
     if end < args.start:
         parser.error(f"--end {end} is before --start {args.start}")

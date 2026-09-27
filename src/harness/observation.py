@@ -7,7 +7,7 @@ keep working as later slices fill them in:
     history     realized public data posted before the interval (empty for now)
     forecasts   latest forecast vintages posted at or before the interval
                 (empty unless the run was given a forecast store)
-    forecaster  output of the configured price forecaster (empty for now)
+    forecaster  output of the configured price forecaster (empty unless one is set)
     fleet       observed fleet state per region (see harness.fleet)
     products    product rules: duration, pilot cap and cap share
     homes       per-home state, only when a run supplies it
@@ -20,7 +20,7 @@ policy's handshake asks for it.
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import Any, NotRequired, Protocol, TypedDict
 
 import pandas as pd
@@ -95,14 +95,17 @@ def observed_capability_mw(observation: Observation, product: str) -> float:
 def observations(rows: pd.DataFrame, scenario: Scenario, case: FleetCase, *,
                  homes: Sequence[Mapping[str, Any]] | None = None,
                  forecasts: ForecastQuery | None = None,
-                 forecast_horizon: dt.timedelta = DEFAULT_HORIZON) -> Iterator[Observation]:
+                 forecast_horizon: dt.timedelta = DEFAULT_HORIZON,
+                 forecaster: Callable[[Observation], Mapping[str, Any]] | None = None,
+                 ) -> Iterator[Observation]:
     """One observation per row of the market interval table, in order, seeing
     the fleet as the fleet `case` has it at each interval's start.
 
     `homes` is copied onto every observation when given. The fleet model
     reports regions, not per-home records; this is how a run can attach those.
     When `forecasts` is given, each observation's forecasts section is `as_of`
-    at that interval's start.
+    at that interval's start. `forecaster`, when given, fills the forecaster
+    section; it is called with the observation built so far.
     """
     for i, (start, row) in enumerate(zip(pd.DatetimeIndex(rows.index), rows.to_dict("records"))):
         obs = Observation(
@@ -134,6 +137,8 @@ def observations(rows: pd.DataFrame, scenario: Scenario, case: FleetCase, *,
         )
         if homes is not None:
             obs["homes"] = [dict(home) for home in homes]
+        if forecaster is not None:
+            obs["forecaster"] = dict(forecaster(obs))
         yield obs
 
 
