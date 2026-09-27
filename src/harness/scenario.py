@@ -22,7 +22,7 @@ import pandas as pd
 import yaml
 
 from harness.market.catalog import CPT
-from harness.products import PRODUCTS
+from harness.products import LOAD_ZONES, PRODUCTS
 
 # Fleet-state modes.
 QUANTILE = "quantile"  # quantile mocks: the share of the fleet available, P10..P90
@@ -32,6 +32,17 @@ QUANTILES = ("P10", "P25", "P50", "P75", "P90")
 # What the policy sees in quantile mode.
 TYPICAL = "typical"  # the typical quantile's fleet; its K is scored against every quantile's D
 PER_CASE = "per_case"  # each quantile's own fleet, deciding once per quantile
+
+# How a shortfall is turned into dollars. These are assumptions; the physical
+# shortfall MW-h does not depend on them.
+ENERGY = "energy"  # (a) load-zone RT price x shortfall x product duration
+ENERGY_SPD = "energy_spd"  # (b) (a), plus Set Point Deviation beyond tolerance
+IMBALANCE = "imbalance"  # (c) shortfall x RT MCPC x interval length
+PRESETS = (ENERGY, ENERGY_SPD, IMBALANCE)
+
+# Set Point Deviation tolerance: the lesser of 3% of the award or 3 MW.
+SPD_TOLERANCE_FRACTION = 0.03
+SPD_TOLERANCE_MW = 3.0
 
 
 class ScenarioError(ValueError):
@@ -118,12 +129,68 @@ class Failures:
 
 
 @dataclass(frozen=True)
+class ForcedDeployment:
+    """A deployment forced at a set time (for storms and test fixtures)."""
+
+    product: str
+    start: pd.Timestamp  # tz-aware, CPT
+    minutes: float
+
+
+@dataclass(frozen=True)
+class Deployments:
+    """Whether ERCOT calls on a product this interval.
+
+    `calm` and `scarce` are probabilities per interval, chosen from the
+    dataset's scarcity flag. Draws use the seeded "deployments" stream, so
+    every policy sees the same calls. `refill_kw` is how fast an online home
+    recharges between those calls.
+    """
+
+    calm: float
+    scarce: float
+    refill_kw: float
+    forced: tuple[ForcedDeployment, ...]
+
+
+@dataclass(frozen=True)
+class Scoring:
+    """Secondary dollar views. The physical shortfall does not depend on them.
+
+    `preset` selects the shortfall-cost formula. `compliance_per_mw` is added
+    on top, per MW short, under every preset. `exceedance_mw` and `tolerance_mw`
+    are the MW grids of the exceedance curve and the tolerance table.
+    """
+
+    preset: str
+    load_zone: str  # which load zone's RT price is λ
+    compliance_per_mw: float
+    spd_per_mwh: float  # Set Point Deviation rate, preset (b) only
+    exceedance_mw: tuple[float, ...]
+    tolerance_mw: tuple[float, ...]
+
+
+@dataclass(frozen=True)
 class Scenario:
     name: str
     seed: int  # default seed for runs that don't pass one
     fleet: Fleet
     failures: Failures
+    deployments: Deployments
+    scoring: Scoring
     products: dict[str, ProductRules]
+
+
+def resolve_scenario(spec: str | Path) -> Path:
+    """A scenario path. A bare preset name is the file of that name under scenarios/."""
+    path = Path(spec)
+    if path.is_file():
+        return path
+    bundled = Path(__file__).resolve().parents[2] / "scenarios"
+    for candidate in (bundled / spec, bundled / f"{path.name}.yaml"):
+        if candidate.is_file():
+            return candidate
+    return path
 
 
 def load_scenario(path: Path | str) -> Scenario:
@@ -131,6 +198,7 @@ def load_scenario(path: Path | str) -> Scenario:
     path = Path(path)
     try:
         data = yaml.load(path.read_text(), Loader=_StrictLoader)
+        data = _apply_extends(data, path.parent, trail=(path.resolve(),))
         return parse_scenario(data, name=path.stem, base_dir=path.parent)
     except OSError as e:
         raise ScenarioError(f"{path}: cannot read: {e.strerror}") from e
@@ -138,6 +206,40 @@ def load_scenario(path: Path | str) -> Scenario:
         raise ScenarioError(f"{path}: not valid YAML: {e}") from e
     except ScenarioError as e:
         raise ScenarioError(f"{path}: {e}") from e
+
+
+def _apply_extends(data: Any, directory: Path, trail: tuple[Path, ...]) -> Any:
+    """Overlay `data` on the scenario it names in `extends`, resolved beside the file.
+
+    Mappings merge key by key. Everything else, including lists, is replaced.
+    The scenario's name stays the overlay file's name.
+    """
+    if not isinstance(data, dict) or "extends" not in data:
+        return data
+    parent_name = data["extends"]
+    if not isinstance(parent_name, str) or not parent_name:
+        raise ScenarioError(f"extends: expected a scenario name, got {parent_name!r}")
+    parent_path = (directory / f"{parent_name}.yaml").resolve()
+    if parent_path in trail:
+        raise ScenarioError(f"extends: {parent_name} includes itself")
+    try:
+        parent = yaml.load(parent_path.read_text(), Loader=_StrictLoader)
+    except OSError as e:
+        raise ScenarioError(f"extends: cannot read {parent_name}: {e.strerror}") from e
+    except yaml.YAMLError as e:
+        raise ScenarioError(f"extends: {parent_name} is not valid YAML: {e}") from e
+    parent = _apply_extends(parent, parent_path.parent, trail + (parent_path,))
+    overlay = {key: value for key, value in data.items() if key != "extends"}
+    return _deep_merge(parent, overlay)
+
+
+def _deep_merge(base: Any, overlay: Any) -> Any:
+    if isinstance(base, dict) and isinstance(overlay, dict):
+        merged = dict(base)
+        for key, value in overlay.items():
+            merged[key] = _deep_merge(merged[key], value) if key in merged else value
+        return merged
+    return overlay
 
 
 class _StrictLoader(yaml.SafeLoader):
@@ -166,7 +268,7 @@ def parse_scenario(data: Any, name: str, base_dir: Path | None = None) -> Scenar
     `base_dir` is where a quantile-mock CSV path is resolved from (default: the
     working directory).
     """
-    root = _exact_fields(data, "", ("seed", "fleet", "failures", "products"))
+    root = _exact_fields(data, "", ("seed", "fleet", "failures", "deployments", "scoring", "products"))
     fleet = _fleet(root["fleet"], "fleet", base_dir)
     products = _exact_fields(root["products"], "products", tuple(PRODUCTS))
     return Scenario(
@@ -174,6 +276,8 @@ def parse_scenario(data: Any, name: str, base_dir: Path | None = None) -> Scenar
         seed=_seed(root["seed"], "seed"),
         fleet=fleet,
         failures=_failures(root["failures"], "failures", fleet),
+        deployments=_deployments(root["deployments"], "deployments"),
+        scoring=_scoring(root["scoring"], "scoring"),
         products={p: _product_rules(products[p], f"products.{p}") for p in PRODUCTS},
     )
 
@@ -283,13 +387,62 @@ def _region_outage(value: Any, where: str, fleet: Fleet) -> RegionOutage:
     region = _integer(outage["region"], f"{where}.region", low=0)
     if region >= fleet.regions:
         raise ScenarioError(f"{where}.region: must be below fleet.regions ({fleet.regions}), got {region}")
+    return RegionOutage(region, _cpt_time(outage["start"], f"{where}.start"),
+                        _number(outage["minutes"], f"{where}.minutes", low=0))
+
+
+def _deployments(value: Any, where: str) -> Deployments:
+    raw = _exact_fields(value, where, ("calm", "scarce", "refill_kw", "forced"))
+    forced = raw["forced"]
+    if not isinstance(forced, list):
+        raise ScenarioError(f"{where}.forced: expected a list, got {forced!r}")
+    return Deployments(
+        calm=_number(raw["calm"], f"{where}.calm", low=0, high=1),
+        scarce=_number(raw["scarce"], f"{where}.scarce", low=0, high=1),
+        refill_kw=_number(raw["refill_kw"], f"{where}.refill_kw", low=0),
+        forced=tuple(_forced_deployment(item, f"{where}.forced[{i}]") for i, item in enumerate(forced)),
+    )
+
+
+def _forced_deployment(value: Any, where: str) -> ForcedDeployment:
+    raw = _exact_fields(value, where, ("product", "start", "minutes"))
+    if raw["product"] not in PRODUCTS:
+        raise ScenarioError(f"{where}.product: expected one of {', '.join(PRODUCTS)}, got {raw['product']!r}")
+    return ForcedDeployment(raw["product"], _cpt_time(raw["start"], f"{where}.start"),
+                            _number(raw["minutes"], f"{where}.minutes", low=0))
+
+
+def _scoring(value: Any, where: str) -> Scoring:
+    raw = _exact_fields(value, where, (
+        "preset", "load_zone", "compliance_per_mw", "spd_per_mwh", "exceedance_mw", "tolerance_mw"))
+    if raw["preset"] not in PRESETS:
+        raise ScenarioError(f"{where}.preset: expected one of {', '.join(PRESETS)}, got {raw['preset']!r}")
+    if raw["load_zone"] not in LOAD_ZONES:
+        raise ScenarioError(f"{where}.load_zone: expected one of {', '.join(LOAD_ZONES)}, "
+                            f"got {raw['load_zone']!r}")
+    return Scoring(
+        preset=raw["preset"],
+        load_zone=raw["load_zone"],
+        compliance_per_mw=_number(raw["compliance_per_mw"], f"{where}.compliance_per_mw", low=0),
+        spd_per_mwh=_number(raw["spd_per_mwh"], f"{where}.spd_per_mwh", low=0),
+        exceedance_mw=_mw_grid(raw["exceedance_mw"], f"{where}.exceedance_mw"),
+        tolerance_mw=_mw_grid(raw["tolerance_mw"], f"{where}.tolerance_mw"),
+    )
+
+
+def _mw_grid(value: Any, where: str) -> tuple[float, ...]:
+    if not isinstance(value, list) or not value:
+        raise ScenarioError(f"{where}: expected a non-empty list of MW, got {value!r}")
+    return tuple(_number(x, where, low=0) for x in value)
+
+
+def _cpt_time(value: Any, where: str) -> pd.Timestamp:
     try:
-        start = pd.Timestamp(outage["start"])
-        start = start.tz_localize(CPT) if start.tzinfo is None else start.tz_convert(CPT)
+        start = pd.Timestamp(value)
+        return start.tz_localize(CPT) if start.tzinfo is None else start.tz_convert(CPT)
     except Exception as e:  # unparseable, or a local time DST skips or repeats
-        raise ScenarioError(f"{where}.start: expected a CPT date and time like '2026-03-08 14:00' "
-                            f"(give a UTC offset around DST changes), got {outage['start']!r}") from e
-    return RegionOutage(region, start, _number(outage["minutes"], f"{where}.minutes", low=0))
+        raise ScenarioError(f"{where}: expected a CPT date and time like '2026-03-08 14:00' "
+                            f"(give a UTC offset around DST changes), got {value!r}") from e
 
 
 def _product_rules(value: Any, where: str) -> ProductRules:

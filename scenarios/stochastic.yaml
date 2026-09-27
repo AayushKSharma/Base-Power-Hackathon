@@ -33,6 +33,18 @@ failures:
   region_outage_min: 120       # PLACEHOLDER
   scarcity_stress: 4           # PLACEHOLDER: both chances x4 in scarce intervals
   forced_region_outages: []    # e.g. [{region: 3, start: "2026-08-26 18:00", minutes: 240}] (CPT)
+deployments:               # drawn per interval and product; PLACEHOLDER probabilities (questions.md)
+  calm: 0.02               # PLACEHOLDER: chance ERCOT deploys in a calm interval
+  scarce: 0.30             # PLACEHOLDER: chance in an interval the dataset flags scarce
+  refill_kw: 5             # PLACEHOLDER: kW an online home recharges
+  forced: []               # e.g. [{product: ECRS, start: "2026-08-26 18:00", minutes: 60}] (CPT)
+scoring:                   # dollar shortfall views. ASSUMPTION, secondary to shortfall MW-h
+  preset: energy           # energy | energy_spd | imbalance
+  load_zone: HOUSTON       # PLACEHOLDER: load-zone RT price used as λ
+  compliance_per_mw: 500   # PLACEHOLDER: $/MW short, added under every preset
+  spd_per_mwh: 50          # PLACEHOLDER: Set Point Deviation $/MWh beyond the lesser of 3% or 3 MW
+  exceedance_mw: [0, 1, 5, 10, 25, 50]
+  tolerance_mw: [1, 5, 10, 25]
 products:
   ECRS:
     duration_h: 1          # Protocols 8.1.1.3.4 (3.17.4 says 2 h)

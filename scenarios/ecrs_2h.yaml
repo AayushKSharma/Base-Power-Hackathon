@@ -1,0 +1,5 @@
+# ECRS held for 2 h, the duration Protocols 3.17.4 still states, instead of 1 h.
+extends: baseline
+products:
+  ECRS:
+    duration_h: 2

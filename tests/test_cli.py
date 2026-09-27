@@ -53,6 +53,20 @@ def test_harness_run_prints_scorecards_and_writes_json_and_a_data_dump(market_st
             assert row["deliverable_mw"] * 5 / 60 == pytest.approx(totals["deliverable_mw_h"])
 
 
+def test_harness_run_accepts_a_preset_name_and_writes_a_report(market_store, tmp_path, capsys):
+    out = tmp_path / "run"
+
+    code = main(["run", "--scenario", "baseline", "--market-dir", str(market_store),
+                 "--out", str(out), "--start", "2026-03-08", "--seed", "3"])
+
+    assert code == 0
+    report = (out / "report.md").read_text()
+    assert "exceedance" in report
+    assert "P10" in report and "P90" in report
+    printed = capsys.readouterr().out
+    assert "report.md" in printed
+
+
 def test_harness_run_defaults_to_one_day_and_the_scenarios_seed(market_store, tmp_path):
     out = tmp_path / "run"
 

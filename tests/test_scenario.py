@@ -32,6 +32,18 @@ failures:
   region_outage_min: 120
   scarcity_stress: 4
   forced_region_outages: [{region: 3, start: "2026-08-26 18:00", minutes: 240}]
+deployments:
+  calm: 0.02
+  scarce: 0.3
+  refill_kw: 5
+  forced: [{product: ECRS, start: "2026-08-26 18:00", minutes: 60}]
+scoring:
+  preset: energy
+  load_zone: HOUSTON
+  compliance_per_mw: 500
+  spd_per_mwh: 50
+  exceedance_mw: [0, 1, 5]
+  tolerance_mw: [1, 5]
 """
 
 
@@ -145,7 +157,7 @@ def test_quantile_mock_shares_must_be_numbers(tmp_path):
     (VALID.replace("typical: P50", "typical: P40"),
      "fleet.quantile_mock.typical: expected one of P10, P25, P50, P75, P90, got 'P40'"),
     (VALID.split("failures:")[0],
-     "missing field 'failures'"),
+     "missing fields 'failures', 'deployments', 'scoring'"),
     (VALID.replace("region: 3", "region: 4"),
      "failures.forced_region_outages[0].region: must be below fleet.regions (4), got 4"),
     (VALID.replace('"2026-08-26 18:00"', '"soon"'),

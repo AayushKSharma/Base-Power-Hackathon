@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
-from harness.observation import Observation, observed_capability_mw
+from harness.observation import Observation
 from harness.products import PRODUCTS
 from harness.scenario import Scenario
 
@@ -51,7 +51,10 @@ class ConstantHaircut:
         return f"constant_haircut(fraction={self.fraction:g})"
 
     def decide(self, observation: Observation) -> Capability:
-        return {product: self.fraction * observed_capability_mw(observation, product)
+        # Multiply before dividing by 1000, matching examples/constant_haircut_policy.py,
+        # so an external copy of this haircut reports the same bits.
+        regions = observation["fleet"]["regions"]
+        return {product: self.fraction * sum(r["capability_kw"][product] for r in regions) / 1000
                 for product in PRODUCTS}
 
 

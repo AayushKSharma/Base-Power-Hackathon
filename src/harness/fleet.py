@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import numpy as np
@@ -61,6 +62,11 @@ class FleetCase:
     capability_kw: dict[str, np.ndarray]  # per product
     # True deliverable MW per product, shape (intervals,).
     deliverable_mw: dict[str, np.ndarray]
+    # Home-level state for draining SOC. The scorer steps a copy of `home_soc`.
+    home_soc: np.ndarray  # (homes,) starting SOC
+    home_online: np.ndarray  # (homes, intervals)
+    sustains: dict[str, np.ndarray]  # product -> homes that can hold the window from each interval
+    region_of: np.ndarray  # (homes,) region id
 
 
 def simulate_day(scenario: Scenario, day: dt.date, starts_utc: pd.DatetimeIndex,
@@ -97,6 +103,10 @@ def simulate_day(scenario: Scenario, day: dt.date, starts_utc: pd.DatetimeIndex,
             inverter_kw=(seen * fleet.inverter_kw) @ by_region,
             capability_kw={p: (seen * kw) @ by_region for p, kw in home_kw.items()},
             deliverable_mw={p: home_kw[p] @ (still_available >= w) / 1000 for p, w in window_steps.items()},
+            home_soc=soc.copy(),
+            home_online=online,
+            sustains={p: still_available >= w for p, w in window_steps.items()},
+            region_of=np.arange(fleet.homes) % fleet.regions,
         )
 
     step_starts = starts_utc[0] + pd.to_timedelta(np.arange(steps) * STEP_S, unit="s")
@@ -171,6 +181,57 @@ def _force_outages(failures: Failures, step_starts: pd.DatetimeIndex, outages: _
         end = begin + outage.minutes * 60
         outages.busy[outage.region] |= (begin < t0 + STEP_S) & (end > t0)
         outages.active[outage.region] |= ((begin <= t0) & (t0 < end))[:intervals]
+
+
+def project_interval(scenario: Scenario, case: FleetCase, soc: np.ndarray, interval: int) -> None:
+    """Rewrite one interval's observed energy, capability and deliverable MW from `soc`.
+
+    The products match `simulate_day`: online homes times per-home kW, then the
+    region one-hot. A matching summation order keeps an external policy, which
+    sees the observation as JSON, on the same floats as an in-process policy.
+    """
+    fleet = scenario.fleet
+    energy = np.maximum(soc - fleet.backup_floor, 0.0) * fleet.battery_kwh
+    seen = case.home_online[:, interval].astype(float)
+    by_region = np.eye(fleet.regions)[case.region_of]
+    case.energy_above_floor_kwh[interval] = (seen * energy) @ by_region
+    for product, rules in scenario.products.items():
+        kw = np.minimum(fleet.inverter_kw, energy / rules.duration_h)
+        case.capability_kw[product][interval] = (seen * kw) @ by_region
+        case.deliverable_mw[product][interval] = kw @ case.sustains[product][:, interval] / 1000
+
+
+def step_soc(scenario: Scenario, case: FleetCase, soc: np.ndarray, interval: int,
+             delivered_mw: Mapping[str, float]) -> tuple[np.ndarray, int]:
+    """Discharge `delivered_mw` and, in an interval that delivers nothing, refill.
+
+    Discharge is shared across the homes that can sustain each product, in
+    proportion to their kW, and clamped so SOC does not fall through the backup
+    floor. The returned count is homes whose requested discharge exceeded the
+    energy above the floor. A clamp makes that count zero.
+    """
+    fleet = scenario.fleet
+    soc = np.array(soc, dtype=float, copy=True)
+    above = np.maximum(soc - fleet.backup_floor, 0.0) * fleet.battery_kwh
+    hours = STEP_S / 3600
+    requested = np.zeros(fleet.homes)
+    for product, mw in delivered_mw.items():
+        if mw <= 0:
+            continue
+        kw = np.minimum(fleet.inverter_kw, above / scenario.products[product].duration_h)
+        weights = np.where(case.sustains[product][:, interval], kw, 0.0)
+        total = float(weights.sum())
+        if total <= 0:
+            continue
+        requested += mw * 1000.0 * hours * weights / total
+    breaches = int(np.count_nonzero(requested > above + 1e-6))
+    requested = np.minimum(requested, above)
+    soc = np.where(soc >= fleet.backup_floor, fleet.backup_floor + (above - requested) / fleet.battery_kwh, soc)
+    if not any(mw > 0 for mw in delivered_mw.values()) and scenario.deployments.refill_kw > 0:
+        room = np.maximum(1.0 - soc, 0.0) * fleet.battery_kwh
+        add = np.minimum(scenario.deployments.refill_kw * hours, room)
+        soc = soc + np.where(case.home_online[:, interval], add / fleet.battery_kwh, 0.0)
+    return np.minimum(soc, 1.0), breaches
 
 
 def _steps_still_available(available: np.ndarray) -> np.ndarray:
