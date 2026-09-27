@@ -111,13 +111,13 @@ Camera on, Loom, one take. Pre-type this in a terminal and do not press Enter un
     --scenario baseline --start 2026-08-17 --out data/replay/oneday
 ```
 
-Have these open behind it, in this order, so each switch is a click and not a hunt: `docs/insights/compare/charts/frontier.png`, `rankings.png`, `docs/insights/compare/comparison.md` scrolled to the first P10 ECRS table, `data/replay/chaos/timeline.png`, `docs/bench/bench.md`.
+Have these open behind the terminal, in this order: `docs/insights/compare/charts/rankings.png`, then `data/replay/chaos/timeline.png`. Do not open the frontier chart. It is a flat line at zero shortfall, and the console table already shows that the shortfall is on P10.
 
 Do not run `make backtest`, `make bench`, or `make chaos` on camera. The week and the farm rewrite published files. Chaos takes about 90 seconds, which would blow the five minutes. You already have its log: reaction 180 seconds, recovery 0, floor violations 0.
 
 ## Script
 
-Read the times as a ceiling. Sections 3 and 4 define each market word once, in the order you say it. If the clock is past 4:00, skip the Postgres sentence and go to the close.
+Read the times as a ceiling. Sections 3 and 4 define each market word once. One chart for the week, one chart for the live replay.
 
 ### 1. Team — 0:00 to 0:25, camera
 
@@ -129,41 +129,31 @@ Base already reports how many megawatts of ECRS and Non-Spin its batteries can h
 
 ### 3 and 4. Live demo, and how it is built — 0:50 to 4:15
 
-Press Enter. Stay on the console. Say the first paragraph while the command runs. Point at the table after the rows appear.
+Press Enter. Stay on the console until you click to the rankings chart.
 
 **[SAY, over the run]**
 
-This command tests one algorithm on one real day, 17 August 2026. The algorithm is a haircut. A haircut reports 90 percent of the capacity it can see. It does not use the price. The program is Python. The prices come from ERCOT, the operator of the Texas grid.
+This command tests one algorithm on 17 August 2026. The algorithm is a haircut. It reports 90 percent of the capacity it can see. It does not use the price. The prices come from ERCOT, the operator of the Texas grid.
 
-**[SAY, table on screen. Point at the header, then the P50 row, then the P10 row.]**
+**[SAY, table on screen. Point at P50, then P10.]**
 
-ERCOT pays batteries to hold capacity in reserve. These are two reserve products. ECRS must be ready within minutes, and the battery must be able to hold that power for 1 hour. Non-Spin is the slower product. The battery must hold that power for 4 hours. At a typical 60 percent charge, one Base battery can offer about 16 kilowatts of ECRS, but only about 4 kilowatts of Non-Spin. The energy in the battery sets that limit.
+ERCOT pays a battery to hold two reserves. ECRS must be deliverable for 1 hour. Non-Spin must be deliverable for 4 hours, so the same battery can offer much less of it.
 
-The algorithm reports a capacity, K. Deliverable capacity, D, is the power the homes can really hold for that many hours. The algorithm does not see D. The test compares K with D after the decision.
+The algorithm reports a capacity, K. D is what the homes can really deliver. The algorithm does not see D. This fleet is a test setup of 1000 homes, not Base's measured fleet. Twenty percent of each battery stays for the home.
 
-The fleet in this test is not Base's measured fleet. It is a setup file: 1000 homes, each with a 20 kilowatt inverter and a 39.2 kilowatt-hour battery. The setup keeps 20 percent of each battery for the home. A wrong field in the file is an error. The file does not fall back to a hidden default.
+P50 is the middle fleet. The algorithm sees only P50. P10 is a thin fleet: only 10 percent of outcomes have fewer homes. The same report is scored on every row. The algorithm cannot look at P10 and change K.
 
-P50 and P10 are two possible fleets for the same day. P50 is the middle fleet. Half of the availability outcomes are smaller than P50, and half are larger. The algorithm sees only P50. P10 is a thin fleet. Only 10 percent of outcomes have fewer homes available. We take the same report and score it on P10, P25, P50, P75, and P90. The algorithm cannot look at the thin fleet and change its report.
+On P10, K is above D all day. A shortfall is capacity you promised and could not deliver when ERCOT calls on the reserve. The negative dollars are a placeholder penalty, not an invoice. From P25 up, the shortfall is zero. "Given up" is payment you did not collect because you reported less than D.
 
-On P10, K is higher than D for the full day. The shortfall is a few tenths of a megawatt-hour. A shortfall is capacity you promised and could not deliver when ERCOT calls. The net dollar line is negative. That dollar line is a placeholder, not an invoice. We do not know the real penalty for a short delivery. From P25 up, the shortfall is zero. "Given up" is the payment you did not collect because you reported less than D. That column grows as the fleet gets larger.
+**[SCREEN]** `rankings.png` only.
 
-A deployment is ERCOT calling on the reserve. The public data does not mark every call. The setup draws a call with probability 2 percent in a normal interval, and 30 percent when the price is in the top 1 percent of the stored history. That top 1 percent uses the full history, so it looks ahead. The score labels that look-ahead as an assumption. Shortfall counts only when a call is drawn.
+This is the same test for 11 to 17 August, already run. Four algorithms. The haircut is the 90 percent rule. The independent newsvendor assumes each home fails alone, and reports more when the price is high. The correlated newsvendor assumes a whole region can fail together. The reliability target caps the chance of a shortfall.
 
-**[SCREEN]** `frontier.png`, then `rankings.png`.
-
-A full week of four algorithms takes minutes. This chart is that same test, already run, for 11 to 17 August. Each algorithm carries its own assumptions. The test scores the setup, not those assumptions.
-
-The haircut is the fixed 90 percent rule you just ran. The independent newsvendor assumes each home fails alone. It reports more capacity when the reserve price is high, and less when a call is likely. The correlated newsvendor assumes a whole region can fail together. It draws 64 possible futures from a fixed random seed and keeps the capacity with the best expected result. The reliability target reports the largest K whose chance of a shortfall stays under a limit, for example 1 percent or 5 percent.
-
-On the P50 fleet that every algorithm saw, the week's shortfall is zero. The chart is a flat line. A stricter limit only gives up payment. It does not buy more reliability on this fleet. A pilot cap is the maximum megawatts one company may sell. Raising that cap from 100 megawatts to 500 does not change the order. This test fleet is too small to fill 100 megawatts. Cutting Non-Spin from 4 hours to 2 hours does change the order. The correlated newsvendor then beats the haircut. The same energy can support more megawatts, so Non-Spin payment about doubles. Algorithms on one setup share the random draws. The difference between them is the algorithm.
+On the P50 fleet, the week's shortfall is zero, so a stricter target only gives up payment. Raising the sales cap from 100 to 500 megawatts does not change the order. This fleet is too small to fill the cap. Cutting Non-Spin from 4 hours to 2 hours does. The correlated newsvendor then beats the haircut, because the same stored energy supports more megawatts.
 
 **[SCREEN]** `data/replay/chaos/timeline.png`.
 
-This is the same morning on a 2-second clock. One coordinator splits the reported capacity across regions. One process per region stands in for the homes. This run takes 90 seconds, so the chart is from the run already done. The log said: reaction 180 seconds, recovery 0, backup-floor violations 0.
-
-At 2 seconds the test kills two region processes. The report does not drop. At 100 seconds one region loses grid power. Homes on backup power cannot export, so both lines drop together. At 182 seconds only the reported line drops. Telemetry older than 180 seconds counts as stale, so the dead processes leave the report. The homes behind those processes can still deliver, so D does not drop. Recovery is 0 because ERCOT did not call, and commanded power stayed at 0. At 200 seconds the coordinator restarts from Postgres. The lines do not move.
-
-The same day is also a job in a Postgres queue. A worker takes one job, writes the score once, and a killed worker cannot write that day again. Postgres is the queue because the test must run on a laptop. A Base algorithm can be a separate program. The program reads one JSON line and writes capacity. If the program crashes, the test records the fault and continues the day.
+Same morning, on a 2-second clock. A region outage drops both lines at once. Two killed processes stay in the report until their data is 180 seconds old. That is Base's stale-telemetry rule. The log said reaction 180 seconds and zero violations of the home's reserve. A Base algorithm can be its own program. If it crashes, the test records the fault and finishes the day.
 
 ### 5. So what — 4:15 to 4:45, camera or the chart
 
