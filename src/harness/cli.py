@@ -2,6 +2,7 @@
 
     harness run --scenario scenarios/baseline.yaml --start 2026-03-08 --end 2026-03-09
     harness compare --policy constant_haircut --policy base_actual --scenario baseline --start 2026-03-08 --out compare
+    harness replay --scenario scenarios/baseline.yaml --day 2026-03-08 --minutes 5 --out replay
 
 Prints a scorecard per fleet case (quantile mock P10..P90, or stochastic) and
 writes scorecard.json, a markdown report (report.md) and the per-interval
@@ -39,6 +40,7 @@ from harness.market import MarketDataMissing, load_intervals
 from harness.market.dataset import default_store_dir
 from harness.paths import runs_dir
 from harness.policy import BUILTIN, Policy, PolicyError, base_actual_policy, builtin_policy
+from harness.replay import ReplayError, replay as replay_day
 from harness.report import render_report
 from harness.runner import INTERVALS_FILE, REPORT_FILE, SCORECARD_FILE, run
 from harness.scenario import Scenario, ScenarioError, load_scenario, resolve_scenario
@@ -96,6 +98,31 @@ def main(argv: list[str] | None = None) -> int:
     compare.add_argument("--market-dir", type=Path, help=f"market dataset (default {default_store_dir()})")
     compare.add_argument("--out", type=Path, required=True, help="output directory")
 
+    replay_cmd = sub.add_parser("replay", help="play one operating day on a 2-second simulated clock")
+    replay_cmd.add_argument("--policy", default="constant_haircut",
+                            help=f"built-in policy ({', '.join(BUILTIN)}) or an external command "
+                                 "(default constant_haircut)")
+    replay_cmd.add_argument("--param", action="append", default=[], metavar="KEY=VALUE",
+                            help="built-in policy parameter, repeatable")
+    replay_cmd.add_argument("--decision-timeout", type=float, default=1.0,
+                            help="seconds an external policy has to answer one decision (default 1)")
+    replay_cmd.add_argument("--fallback", choices=("last_good", "zero"), default="last_good",
+                            help="capability used when an external policy times out, crashes, or replies "
+                                 "badly (default last_good)")
+    replay_cmd.add_argument("--scenario", required=True,
+                            help="scenario YAML file, or a preset name")
+    replay_cmd.add_argument("--day", required=True, type=dt.date.fromisoformat,
+                            help="operating day (CPT), YYYY-MM-DD")
+    replay_cmd.add_argument("--minutes", type=float,
+                            help="simulated minutes from the start of the day (default: the whole day)")
+    replay_cmd.add_argument("--tick", type=float, default=2.0,
+                            help="simulated seconds per tick (default 2)")
+    replay_cmd.add_argument("--speed", type=float,
+                            help="simulated seconds per wall-clock second (default: as fast as possible)")
+    replay_cmd.add_argument("--seed", type=_seed, help="random seed (default: the scenario's seed)")
+    replay_cmd.add_argument("--market-dir", type=Path, help=f"market dataset (default {default_store_dir()})")
+    replay_cmd.add_argument("--out", type=Path, required=True, help="directory for timeline.json")
+
     args = parser.parse_args(argv)
     if args.command == "forecast":
         return forecast_command(args)
@@ -105,6 +132,15 @@ def main(argv: list[str] | None = None) -> int:
         try:
             return _compare(args)
         except (ScenarioError, PolicyError) as e:
+            print(f"harness: error: {e}", file=sys.stderr)
+            return 2
+        except MarketDataMissing as e:
+            print(f"harness: error: {e}", file=sys.stderr)
+            return 1
+    if args.command == "replay":
+        try:
+            return _replay(args)
+        except (ScenarioError, PolicyError, ReplayError) as e:
             print(f"harness: error: {e}", file=sys.stderr)
             return 2
         except MarketDataMissing as e:
@@ -142,6 +178,21 @@ def _compare(args: argparse.Namespace) -> int:
         results.append(run(policy, scenario, args.start, end, args.seed, market=market))
     write_comparison(results, scenario, args.out)
     print(f"Wrote {args.out / 'frontier.svg'} and exceedance.md")
+    return 0
+
+
+def _replay(args: argparse.Namespace) -> int:
+    scenario = load_scenario(resolve_scenario(args.scenario))
+    policy = _policy(args.policy, _params(args.param), scenario, args.decision_timeout, args.fallback,
+                     start=args.day, end=args.day, store_dir=args.market_dir)
+    args.out.mkdir(parents=True, exist_ok=True)
+    timeline = args.out / "timeline.json"
+    result = replay_day(
+        policy, scenario, args.day, seed=args.seed, minutes=args.minutes, tick_s=args.tick,
+        speed=args.speed, market=functools.partial(load_intervals, store_dir=args.market_dir),
+        out=timeline,
+    )
+    print(f"Wrote {timeline} ({len(result.ticks)} ticks)")
     return 0
 
 
