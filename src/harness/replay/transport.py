@@ -1,0 +1,34 @@
+"""Batches between agent hosts and the coordinator.
+
+The transport can hold a batch, discard one, or isolate a region. A held
+batch keeps the telemetry timestamp from when the host sent it.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+class Transport:
+    """Drop, delay, and partition on the path to the coordinator."""
+
+    def __init__(self, delay_s: float = 0.0, *,
+                 drop: tuple[tuple[int, float], ...] = (),
+                 partition_regions: frozenset[int] = frozenset()) -> None:
+        if delay_s < 0:
+            raise ValueError(f"delay must be non-negative, got {delay_s}")
+        self.delay_s = delay_s
+        self._drop = set(drop)
+        self._partition = partition_regions
+        self._held: list[tuple[float, dict[str, Any]]] = []
+
+    def submit(self, batch: dict[str, Any], t_s: float) -> None:
+        region = int(batch["region"])
+        if region in self._partition or (region, t_s) in self._drop:
+            return
+        self._held.append((t_s + self.delay_s, batch))
+
+    def deliver(self, t_s: float) -> list[dict[str, Any]]:
+        ready = [batch for at, batch in self._held if at <= t_s + 1e-9]
+        self._held = [(at, batch) for at, batch in self._held if at > t_s + 1e-9]
+        return ready

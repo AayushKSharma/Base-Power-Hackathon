@@ -67,6 +67,8 @@ class FleetCase:
     home_online: np.ndarray  # (homes, intervals)
     sustains: dict[str, np.ndarray]  # product -> homes that can hold the window from each interval
     region_of: np.ndarray  # (homes,) region id
+    home_backup: np.ndarray  # (homes, intervals) in backup mode at the interval's start
+    home_stale: np.ndarray  # (homes, intervals) telemetry already older than the stale threshold
 
 
 def simulate_day(scenario: Scenario, day: dt.date, starts_utc: pd.DatetimeIndex,
@@ -107,6 +109,8 @@ def simulate_day(scenario: Scenario, day: dt.date, starts_utc: pd.DatetimeIndex,
             home_online=online,
             sustains={p: still_available >= w for p, w in window_steps.items()},
             region_of=np.arange(fleet.homes) % fleet.regions,
+            home_backup=np.array(backup, dtype=bool, copy=True),
+            home_stale=np.array(stale, dtype=bool, copy=True),
         )
 
     step_starts = starts_utc[0] + pd.to_timedelta(np.arange(steps) * STEP_S, unit="s")
