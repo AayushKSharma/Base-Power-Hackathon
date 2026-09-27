@@ -142,6 +142,27 @@ Summing by fleet case and product gives the scorecard's totals:
 - the dollar columns sum directly;
 - the MW columns sum × 5/60 h.
 
+## Farm benchmark
+
+`harness bench` prints scenario-days per minute at 1, 8, and 32 workers, the time to finish after 20% of the workers are killed, and how many jobs were re-run. It writes that table to `bench.md`. `harness aggregate --compare-out` writes the same comparison table and charts as `harness compare` for the sweep.
+
+Measured on baseline, `constant_haircut` and `reliability_target`, 2026-08-20 through 2026-08-21, seed 1 (four jobs). The saved table is [docs/bench/bench.md](docs/bench/bench.md):
+
+| Workers | Scenario-days/min |
+| ---: | ---: |
+| 1 | 18.464 |
+| 8 | 16.585 |
+| 32 | 14.141 |
+
+Killing 6 of 32 workers partway through that sweep took 14.218 seconds to finish and re-ran 3 jobs. On four jobs, one worker completed more scenario-days per minute than 8 or 32.
+
+```bash
+PYTHONPATH=src /Users/yush/Documents/Career/Programming/Base-Power-Hackathon/.venv/bin/python -m harness bench \
+  --sweep docs/bench/sweep.yaml \
+  --market-dir /Users/yush/Documents/Career/Programming/Base-Power-Hackathon/data/market \
+  --out docs/bench
+```
+
 ## Components
 
 - **Market dataset**: `harness.market`. ERCOT AS prices, load-zone prices, AS capability and demand curves on a 5-minute grid from Dec 5, 2025. It loads offline. See [data/README.md](data/README.md).

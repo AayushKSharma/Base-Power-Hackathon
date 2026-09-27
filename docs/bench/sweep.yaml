@@ -1,0 +1,9 @@
+# Small real-data sweep for `harness bench`: two policies, two operating days, one seed.
+policies:
+  - builtin: constant_haircut
+  - builtin: reliability_target
+scenarios:
+  - baseline
+start: 2026-08-20
+end: 2026-08-21
+seeds: [1]

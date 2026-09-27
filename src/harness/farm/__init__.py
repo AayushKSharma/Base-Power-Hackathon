@@ -13,17 +13,19 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import io
 import json
 import random
 import shlex
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
 
+import pandas as pd
 import psycopg
 import yaml
 from psycopg.rows import dict_row
@@ -32,7 +34,7 @@ from harness.external import ExternalPolicy
 from harness.market import load_intervals
 from harness.observation import Observation
 from harness.policy import Capability, PolicyError, builtin_policy
-from harness.runner import run
+from harness.runner import RunResult, run
 from harness.scenario import Scenario, load_scenario
 from harness.scorecard import DayResult, FaultCounts, ProductTotals, Scorecard
 
@@ -76,6 +78,7 @@ CREATE TABLE IF NOT EXISTS results (
     day date NOT NULL,
     seed integer NOT NULL,
     scorecards text NOT NULL,
+    intervals bytea,
     PRIMARY KEY (policy_name, policy_version, scenario_hash, day, seed)
 )
 """
@@ -328,6 +331,8 @@ class Farm:
         self.max_attempts = max_attempts
         self.backoff = backoff
         self._chaos: _ChaosPlan | None = None
+        self._on_job_start: Callable[[Lease], None] | None = None
+        self._doomed: frozenset[str] = frozenset()
 
     def submit(self, sweep: Sweep) -> int:
         """Insert one queued job per (policy, scenario, day, seed). Return how many were new."""
@@ -418,6 +423,9 @@ class Farm:
         supplies the worker's reused external processes.
         """
         job = self._job(lease.job_id)
+        hook = self._on_job_start
+        if hook is not None:
+            hook(lease)
         decision = None if self._chaos is None else self._chaos.decision(lease.attempt)
         if decision == "mid":
             raise WorkerKilled(f"worker {lease.owner} killed mid-job {lease.job_id}")
@@ -431,7 +439,9 @@ class Farm:
         payload = json.dumps([card.to_dict() for card in result.scorecards.values()])
         if decision == "before_commit":
             raise WorkerKilled(f"worker {lease.owner} killed before committing job {lease.job_id}")
-        return self._commit(job, lease, payload)
+        dump = io.BytesIO()
+        result.intervals.to_parquet(dump, index=False)
+        return self._commit(job, lease, payload, dump.getvalue())
 
     def chaos(self, *, workers: int, seed: int, kill: str = "both") -> ChaosReport:
         """Run workers, killing them at seeded points, until every job is terminal.
@@ -493,6 +503,8 @@ class Farm:
         policies = _PolicyPool()
         try:
             while True:
+                if worker_id in self._doomed:
+                    return committed
                 lease = self.claim(worker_id)
                 if lease is None:
                     return committed
@@ -539,6 +551,102 @@ class Farm:
             out[key] = {case: Scorecard.combine(cards) for case, cards in cases.items()}
         return out
 
+    def runs(self) -> tuple[dt.date, dt.date, int, list[tuple[Scenario, list[RunResult]]]]:
+        """One `RunResult` per policy and scenario, in submit order, over this sweep's days.
+
+        Scorecards are the combined per-day results. The interval dump is the per-day
+        dumps concatenated in day order, which is what one `harness compare` run stores.
+        The sweep must be finished, and it must use a single seed: `harness compare`
+        scores one seed.
+        """
+        cards = self.aggregate()
+        with self._connect() as conn:
+            self._ensure(conn)
+            rows = conn.execute(
+                """
+                SELECT j.id, j.policy_name, j.scenario_name, j.scenario_path, j.day, j.seed,
+                       r.intervals
+                FROM jobs AS j
+                JOIN results AS r
+                  ON r.policy_name = j.policy_name
+                 AND r.policy_version = j.policy_version
+                 AND r.scenario_hash = j.scenario_hash
+                 AND r.day = j.day
+                 AND r.seed = j.seed
+                ORDER BY j.id
+                """
+            ).fetchall()
+        if not rows:
+            raise IncompleteSweep("sweep has no results")
+        blobs: dict[tuple[str, str, int], list[tuple[dt.date, memoryview | bytes]]] = {}
+        paths: dict[str, str] = {}
+        order: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        seeds: set[int] = set()
+        days: list[dt.date] = []
+        for row in rows:
+            seed = int(row["seed"])
+            seeds.add(seed)
+            day = row["day"]
+            if isinstance(day, dt.datetime):
+                day = day.date()
+            days.append(day)
+            if row["intervals"] is None:
+                raise ValueError(
+                    f"{row['policy_name']} on {row['scenario_name']} {day} has no interval dump"
+                )
+            key = (str(row["policy_name"]), str(row["scenario_name"]), seed)
+            blobs.setdefault(key, []).append((day, row["intervals"]))
+            paths[str(row["scenario_name"])] = str(row["scenario_path"])
+            pair = (str(row["scenario_name"]), str(row["policy_name"]))
+            if pair not in seen:
+                seen.add(pair)
+                order.append(pair)
+        if len(seeds) != 1:
+            raise ValueError(f"compare renders one seed; this sweep has {sorted(seeds)}")
+        seed = seeds.pop()
+        policies_for: dict[str, list[str]] = {}
+        for scenario_name, policy_name in order:
+            policies_for.setdefault(scenario_name, []).append(policy_name)
+        groups: list[tuple[Scenario, list[RunResult]]] = []
+        for scenario_name in dict.fromkeys(scenario for scenario, _ in order):
+            scenario = load_scenario(paths[scenario_name])
+            results = []
+            for policy_name in policies_for[scenario_name]:
+                parts = sorted(blobs[(policy_name, scenario_name, seed)], key=lambda item: item[0])
+                frames = [pd.read_parquet(io.BytesIO(bytes(blob))) for _, blob in parts]
+                intervals = frames[0] if len(frames) == 1 else pd.concat(frames, ignore_index=True)
+                results.append(RunResult(cards[(policy_name, scenario_name, seed)], intervals))
+            groups.append((scenario, results))
+        return min(days), max(days), seed, groups
+
+    def reset(self) -> None:
+        """Delete every job and result so the next measurement starts empty."""
+        with self._connect() as conn:
+            with conn.transaction():
+                self._ensure(conn)
+                conn.execute("DELETE FROM results")
+                conn.execute("DELETE FROM jobs")
+        self._doomed = frozenset()
+        self._on_job_start = None
+
+    def watch_jobs(self, hook: Callable[[Lease], None] | None) -> None:
+        """Called at the start of each claimed job. A hook may raise `WorkerKilled`."""
+        self._on_job_start = hook
+
+    def doom(self, owners: set[str]) -> None:
+        """These workers stop claiming. A job they already hold waits out its lease."""
+        self._doomed = frozenset(owners)
+
+    def jobs_rerun(self) -> int:
+        """Extra attempts: each claim after the first is work that was thrown away."""
+        with self._connect() as conn:
+            self._ensure(conn)
+            row = conn.execute(
+                "SELECT COALESCE(SUM(attempt - 1), 0) AS n FROM jobs"
+            ).fetchone()
+        return 0 if row is None else int(row["n"])
+
     def status(self) -> FarmStatus:
         """Queued, leased, done and failed counts, plus completed jobs per second since submit."""
         with self._connect() as conn:
@@ -569,7 +677,7 @@ class Farm:
             counts[str(row["status"])] = int(row["n"])
         return counts
 
-    def _commit(self, job: Mapping[str, Any], lease: Lease, payload: str) -> bool:
+    def _commit(self, job: Mapping[str, Any], lease: Lease, payload: str, intervals: bytes) -> bool:
         with self._connect() as conn:
             with conn.transaction():
                 locked = conn.execute(
@@ -582,12 +690,12 @@ class Farm:
                 conn.execute(
                     """
                     INSERT INTO results (
-                        policy_name, policy_version, scenario_hash, day, seed, scorecards
-                    ) VALUES (%s, %s, %s, %s, %s, %s)
+                        policy_name, policy_version, scenario_hash, day, seed, scorecards, intervals
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (policy_name, policy_version, scenario_hash, day, seed) DO NOTHING
                     """,
                     (job["policy_name"], job["policy_version"], job["scenario_hash"],
-                     job["day"], job["seed"], payload),
+                     job["day"], job["seed"], payload, intervals),
                 )
                 updated = conn.execute(
                     """
@@ -683,6 +791,7 @@ class Farm:
         conn.execute(_JOBS)
         conn.execute(_RESULTS)
         conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS not_before timestamptz")
+        conn.execute("ALTER TABLE results ADD COLUMN IF NOT EXISTS intervals bytea")
 
 
 def _identity(spec: PolicySpec, scenario: Scenario) -> dict[str, Any]:
